@@ -7,8 +7,8 @@ A Rust library for parsing Gmsh MSH 4.1 format files.
 - **MSH 4.1 ASCII format support**: Parse Gmsh mesh files in ASCII format
 - **Entity-based organization**: Preserves the entity-based structure of MSH 4.1
 - **Efficient data access**: Both entity-based iteration and O(1) tag-based lookup
-- **Comprehensive parsing**: Supports MeshFormat, PhysicalNames, Entities, Nodes, and Elements sections
-- **Type-safe element types**: All 33 standard Gmsh element types (1-31, 92-93) supported
+- **Core section parsing**: Supports MeshFormat, PhysicalNames, Entities, Nodes, and Elements sections
+- **Type-safe element types**: Supports 33 commonly used Gmsh element types (1-31, 92-93)
 
 ## Supported Sections
 
@@ -116,11 +116,15 @@ let element = mesh.get_element(100)?;
 
 ## Element Types
 
-Supports all standard Gmsh element types (1-31, 92-93):
+Supports 33 commonly used Gmsh element types (1-31, 92-93):
 
 - **Linear**: Point, Line2, Triangle3, Quadrangle4, Tetrahedron4, Hexahedron8, Prism6, Pyramid5
 - **Second order**: Line3, Triangle6, Quadrangle8/9, Tetrahedron10, Hexahedron20/27, Prism15/18, Pyramid13/14
-- **Higher order**: Lines (Line4-6), Triangles (Triangle9-21), Tetrahedra (Tetrahedron20-56), Hexahedra (Hexahedron64-125)
+- **Higher order**:
+  - Lines: Line4, Line5, Line6
+  - Triangles: Triangle9, Triangle10, Triangle12, Triangle15a, Triangle15b, Triangle21
+  - Tetrahedra: Tetrahedron20, Tetrahedron35, Tetrahedron56
+  - Hexahedra: Hexahedron64, Hexahedron125
 
 ## Examples
 
@@ -150,35 +154,3 @@ Run integration tests with real MSH files:
 ```bash
 cargo test --test integration_test
 ```
-
-## Performance
-
-- **Memory**: Nodes and elements stored in both blocks and lookup maps (some duplication)
-- **Speed**: O(1) lookup by tag, O(n) iteration
-- **Large files**: Tested with files up to 1GB
-
-## Reference
-
-Based on the official Gmsh MSH 4.1 file format specification.
-
-Python reference implementation: [ahojukka5/gmshparser](https://github.com/ahojukka5/gmshparser)
-
-## License
-
-MIT
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit issues or pull requests.
-
-## Roadmap
-
-### Near-term
-- [ ] `$Periodic` section parsing
-- [ ] Post-processing data sections (`$NodeData`, `$ElementData`, `$ElementNodeData`)
-- [ ] Binary MSH 4.1 support
-
-### Long-term
-- [ ] MSH file writing
-- [ ] Mesh manipulation utilities
-- [ ] Python bindings (PyO3)
