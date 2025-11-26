@@ -35,7 +35,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-gmsh-parser = "0.1.0"
+gmsh-parser = { git = "https://github.com/elgar328/gmsh-parser" }
 ```
 
 ## Usage
