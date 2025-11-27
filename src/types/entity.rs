@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
 pub enum EntityDimension {
@@ -71,10 +69,10 @@ pub struct VolumeEntity {
 
 #[derive(Debug, Clone, Default)]
 pub struct Entities {
-    pub points: HashMap<i32, PointEntity>,
-    pub curves: HashMap<i32, CurveEntity>,
-    pub surfaces: HashMap<i32, SurfaceEntity>,
-    pub volumes: HashMap<i32, VolumeEntity>,
+    pub points: Vec<PointEntity>,
+    pub curves: Vec<CurveEntity>,
+    pub surfaces: Vec<SurfaceEntity>,
+    pub volumes: Vec<VolumeEntity>,
 }
 
 impl Entities {

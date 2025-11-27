@@ -1,7 +1,7 @@
 use std::io::{BufReader, Lines};
 
 use crate::error::{ParseError, Result};
-use crate::types::{Mesh, PointEntity, CurveEntity, SurfaceEntity, VolumeEntity};
+use crate::types::{Mesh, Entities, PointEntity, CurveEntity, SurfaceEntity, VolumeEntity};
 use super::{read_line, expect_end_marker};
 
 pub fn parse<R: std::io::Read>(
@@ -23,28 +23,34 @@ pub fn parse<R: std::io::Read>(
     let num_surfaces: usize = parts[2].parse()?;
     let num_volumes: usize = parts[3].parse()?;
 
+    // Initialize entities if not already present
+    if mesh.entities.is_none() {
+        mesh.entities = Some(Entities::new());
+    }
+    let entities = mesh.entities.as_mut().unwrap();
+
     // Parse points
     for _ in 0..num_points {
         let point = parse_point_entity(lines)?;
-        mesh.entities.points.insert(point.tag, point);
+        entities.points.push(point);
     }
 
     // Parse curves
     for _ in 0..num_curves {
         let curve = parse_curve_entity(lines)?;
-        mesh.entities.curves.insert(curve.tag, curve);
+        entities.curves.push(curve);
     }
 
     // Parse surfaces
     for _ in 0..num_surfaces {
         let surface = parse_surface_entity(lines)?;
-        mesh.entities.surfaces.insert(surface.tag, surface);
+        entities.surfaces.push(surface);
     }
 
     // Parse volumes
     for _ in 0..num_volumes {
         let volume = parse_volume_entity(lines)?;
-        mesh.entities.volumes.insert(volume.tag, volume);
+        entities.volumes.push(volume);
     }
 
     expect_end_marker(lines, "Entities")?;
@@ -305,9 +311,11 @@ $EndEntities
 
         let result = parse(&mut lines, &mut mesh);
         assert!(result.is_ok());
-        assert_eq!(mesh.entities.points.len(), 1);
 
-        let point = mesh.entities.points.get(&1).unwrap();
+        let entities = mesh.entities.as_ref().unwrap();
+        assert_eq!(entities.points.len(), 1);
+
+        let point = &entities.points[0];
         assert_eq!(point.tag, 1);
         assert_eq!(point.x, 0.0);
         assert_eq!(point.y, 0.0);

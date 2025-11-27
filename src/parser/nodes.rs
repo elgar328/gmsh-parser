@@ -1,7 +1,8 @@
 use std::io::{BufReader, Lines};
 
 use crate::error::{ParseError, Result};
-use crate::types::{Mesh, Node, NodeBlock};
+use crate::types::{Mesh, NodeBlock};
+use crate::types::node::*;
 use super::{read_line, expect_end_marker};
 
 pub fn parse<R: std::io::Read>(
@@ -52,9 +53,7 @@ fn parse_node_block<R: std::io::Read>(
     let parametric: i32 = parts[2].parse()?;
     let num_nodes_in_block: usize = parts[3].parse()?;
 
-    let parametric = parametric != 0;
-
-    let mut block = NodeBlock::new(entity_dim, entity_tag, parametric);
+    let is_parametric = parametric != 0;
 
     // First, read all node tags
     let mut node_tags = Vec::with_capacity(num_nodes_in_block);
@@ -64,51 +63,152 @@ fn parse_node_block<R: std::io::Read>(
         node_tags.push(tag);
     }
 
-    // Then, read all coordinates
-    for tag in node_tags {
-        let line = read_line(lines)?;
-        let parts: Vec<&str> = line.split_whitespace().collect();
-
-        if parts.len() < 3 {
-            return Err(ParseError::InvalidData(
-                "Nodes/Block".to_string(),
-                format!("Expected at least 3 coordinates, got {}", parts.len()),
-            ));
+    // Then, read all coordinates and create the appropriate NodeBlock
+    match (entity_dim, is_parametric) {
+        (0, _) => {
+            // Point nodes (0D, no parametric coordinates)
+            let mut nodes = Vec::with_capacity(num_nodes_in_block);
+            for tag in node_tags {
+                let line = read_line(lines)?;
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() < 3 {
+                    return Err(ParseError::InvalidData(
+                        "Nodes/Block".to_string(),
+                        format!("Expected at least 3 coordinates, got {}", parts.len()),
+                    ));
+                }
+                let x: f64 = parts[0].parse()?;
+                let y: f64 = parts[1].parse()?;
+                let z: f64 = parts[2].parse()?;
+                nodes.push(Node0D { tag, x, y, z });
+            }
+            Ok(NodeBlock::Point { entity_tag, nodes })
         }
-
-        let x: f64 = parts[0].parse()?;
-        let y: f64 = parts[1].parse()?;
-        let z: f64 = parts[2].parse()?;
-
-        let mut node = Node::new(tag, x, y, z);
-
-        // Parse parametric coordinates if present
-        if parametric {
-            let u = if entity_dim >= 1 && parts.len() > 3 {
-                Some(parts[3].parse()?)
-            } else {
-                None
-            };
-
-            let v = if entity_dim >= 2 && parts.len() > 4 {
-                Some(parts[4].parse()?)
-            } else {
-                None
-            };
-
-            let w = if entity_dim == 3 && parts.len() > 5 {
-                Some(parts[5].parse()?)
-            } else {
-                None
-            };
-
-            node = node.with_parametric(u, v, w);
+        (1, false) => {
+            // Curve nodes (1D, no parametric coordinates)
+            let mut nodes = Vec::with_capacity(num_nodes_in_block);
+            for tag in node_tags {
+                let line = read_line(lines)?;
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() < 3 {
+                    return Err(ParseError::InvalidData(
+                        "Nodes/Block".to_string(),
+                        format!("Expected at least 3 coordinates, got {}", parts.len()),
+                    ));
+                }
+                let x: f64 = parts[0].parse()?;
+                let y: f64 = parts[1].parse()?;
+                let z: f64 = parts[2].parse()?;
+                nodes.push(Node1D { tag, x, y, z });
+            }
+            Ok(NodeBlock::Curve { entity_tag, nodes })
         }
-
-        block.nodes.push(node);
+        (1, true) => {
+            // Curve nodes (1D, with parametric coordinates)
+            let mut nodes = Vec::with_capacity(num_nodes_in_block);
+            for tag in node_tags {
+                let line = read_line(lines)?;
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() < 4 {
+                    return Err(ParseError::InvalidData(
+                        "Nodes/Block".to_string(),
+                        format!("Expected at least 4 values (x y z u), got {}", parts.len()),
+                    ));
+                }
+                let x: f64 = parts[0].parse()?;
+                let y: f64 = parts[1].parse()?;
+                let z: f64 = parts[2].parse()?;
+                let u: f64 = parts[3].parse()?;
+                nodes.push(Node1DParametric { tag, x, y, z, u });
+            }
+            Ok(NodeBlock::CurveParametric { entity_tag, nodes })
+        }
+        (2, false) => {
+            // Surface nodes (2D, no parametric coordinates)
+            let mut nodes = Vec::with_capacity(num_nodes_in_block);
+            for tag in node_tags {
+                let line = read_line(lines)?;
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() < 3 {
+                    return Err(ParseError::InvalidData(
+                        "Nodes/Block".to_string(),
+                        format!("Expected at least 3 coordinates, got {}", parts.len()),
+                    ));
+                }
+                let x: f64 = parts[0].parse()?;
+                let y: f64 = parts[1].parse()?;
+                let z: f64 = parts[2].parse()?;
+                nodes.push(Node2D { tag, x, y, z });
+            }
+            Ok(NodeBlock::Surface { entity_tag, nodes })
+        }
+        (2, true) => {
+            // Surface nodes (2D, with parametric coordinates)
+            let mut nodes = Vec::with_capacity(num_nodes_in_block);
+            for tag in node_tags {
+                let line = read_line(lines)?;
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() < 5 {
+                    return Err(ParseError::InvalidData(
+                        "Nodes/Block".to_string(),
+                        format!("Expected at least 5 values (x y z u v), got {}", parts.len()),
+                    ));
+                }
+                let x: f64 = parts[0].parse()?;
+                let y: f64 = parts[1].parse()?;
+                let z: f64 = parts[2].parse()?;
+                let u: f64 = parts[3].parse()?;
+                let v: f64 = parts[4].parse()?;
+                nodes.push(Node2DParametric { tag, x, y, z, u, v });
+            }
+            Ok(NodeBlock::SurfaceParametric { entity_tag, nodes })
+        }
+        (3, false) => {
+            // Volume nodes (3D, no parametric coordinates)
+            let mut nodes = Vec::with_capacity(num_nodes_in_block);
+            for tag in node_tags {
+                let line = read_line(lines)?;
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() < 3 {
+                    return Err(ParseError::InvalidData(
+                        "Nodes/Block".to_string(),
+                        format!("Expected at least 3 coordinates, got {}", parts.len()),
+                    ));
+                }
+                let x: f64 = parts[0].parse()?;
+                let y: f64 = parts[1].parse()?;
+                let z: f64 = parts[2].parse()?;
+                nodes.push(Node3D { tag, x, y, z });
+            }
+            Ok(NodeBlock::Volume { entity_tag, nodes })
+        }
+        (3, true) => {
+            // Volume nodes (3D, with parametric coordinates)
+            let mut nodes = Vec::with_capacity(num_nodes_in_block);
+            for tag in node_tags {
+                let line = read_line(lines)?;
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() < 6 {
+                    return Err(ParseError::InvalidData(
+                        "Nodes/Block".to_string(),
+                        format!("Expected at least 6 values (x y z u v w), got {}", parts.len()),
+                    ));
+                }
+                let x: f64 = parts[0].parse()?;
+                let y: f64 = parts[1].parse()?;
+                let z: f64 = parts[2].parse()?;
+                let u: f64 = parts[3].parse()?;
+                let v: f64 = parts[4].parse()?;
+                let w: f64 = parts[5].parse()?;
+                nodes.push(Node3DParametric { tag, x, y, z, u, v, w });
+            }
+            Ok(NodeBlock::VolumeParametric { entity_tag, nodes })
+        }
+        _ => Err(ParseError::InvalidData(
+            "Nodes/Block".to_string(),
+            format!("Invalid entity dimension: {}", entity_dim),
+        )),
     }
-
-    Ok(block)
 }
 
 #[cfg(test)]
@@ -137,16 +237,16 @@ $EndNodes
         assert!(result.is_ok());
         assert_eq!(mesh.node_blocks.len(), 1);
 
-        let block = &mesh.node_blocks[0];
-        assert_eq!(block.entity_dim, 2);
-        assert_eq!(block.entity_tag, 1);
-        assert!(!block.parametric);
-        assert_eq!(block.nodes.len(), 3);
-
-        let node = &block.nodes[0];
-        assert_eq!(node.tag, 1);
-        assert_eq!(node.x, 0.0);
-        assert_eq!(node.y, 0.0);
-        assert_eq!(node.z, 0.0);
+        match &mesh.node_blocks[0] {
+            NodeBlock::Surface { entity_tag, nodes } => {
+                assert_eq!(*entity_tag, 1);
+                assert_eq!(nodes.len(), 3);
+                assert_eq!(nodes[0].tag, 1);
+                assert_eq!(nodes[0].x, 0.0);
+                assert_eq!(nodes[0].y, 0.0);
+                assert_eq!(nodes[0].z, 0.0);
+            }
+            _ => panic!("Expected Surface node block"),
+        }
     }
 }

@@ -21,19 +21,8 @@
 //!     let mesh = parse_msh_file("example.msh")?;
 //!
 //!     println!("Version: {}", mesh.format.version);
-//!     println!("Total nodes: {}", mesh.num_nodes());
-//!     println!("Total elements: {}", mesh.num_elements());
-//!
-//!     // Iterate by entity
-//!     for block in &mesh.element_blocks {
-//!         println!("Entity {}-{}: {} elements",
-//!             block.entity_dim, block.entity_tag, block.elements.len());
-//!     }
-//!
-//!     // Direct lookup
-//!     if let Some(node) = mesh.get_node(1) {
-//!         println!("Node 1: ({}, {}, {})", node.x, node.y, node.z);
-//!     }
+//!     println!("Node blocks: {}", mesh.node_blocks.len());
+//!     println!("Element blocks: {}", mesh.element_blocks.len());
 //!
 //!     Ok(())
 //! }
@@ -46,9 +35,10 @@ pub mod parser;
 // Re-export main types and functions
 pub use error::{ParseError, Result};
 pub use types::{
-    Mesh,
-    Node, NodeBlock,
-    Element, ElementBlock, ElementType,
+    Mesh, MeshFormat,
+    NodeBlock,
+    ElementBlock, ElementType,
     Entities, PointEntity, CurveEntity, SurfaceEntity, VolumeEntity, EntityDimension,
+    PhysicalName,
 };
 pub use parser::{parse_msh_file, parse_msh};

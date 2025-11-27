@@ -1,5 +1,11 @@
-use std::collections::HashMap;
-use super::{Entities, Node, NodeBlock, Element, ElementBlock};
+//! Mesh structure - pure parsing result
+
+use super::{
+    Entities, NodeBlock, ElementBlock, PhysicalName,
+    PeriodicLink, GhostElement, PartitionedEntities,
+    Parametrizations, NodeData, ElementData, ElementNodeData,
+    InterpolationScheme,
+};
 
 #[derive(Debug, Clone)]
 pub struct MeshFormat {
@@ -21,99 +27,37 @@ impl MeshFormat {
 #[derive(Debug, Clone)]
 pub struct Mesh {
     pub format: MeshFormat,
-    pub physical_names: HashMap<(i32, i32), String>,  // (dimension, tag) -> name
-    pub entities: Entities,
+    pub physical_names: Vec<PhysicalName>,
+    pub entities: Option<Entities>,
+    pub partitioned_entities: Option<PartitionedEntities>,
     pub node_blocks: Vec<NodeBlock>,
     pub element_blocks: Vec<ElementBlock>,
-
-    // Flat access structures for O(1) lookup
-    pub nodes_by_tag: HashMap<usize, Node>,
-    pub elements_by_tag: HashMap<usize, Element>,
+    pub periodic_links: Vec<PeriodicLink>,
+    pub ghost_elements: Vec<GhostElement>,
+    pub parametrizations: Option<Parametrizations>,
+    pub node_data: Vec<NodeData>,
+    pub element_data: Vec<ElementData>,
+    pub element_node_data: Vec<ElementNodeData>,
+    pub interpolation_schemes: Vec<InterpolationScheme>,
 }
 
 impl Mesh {
     pub fn new(format: MeshFormat) -> Self {
         Self {
             format,
-            physical_names: HashMap::new(),
-            entities: Entities::new(),
+            physical_names: Vec::new(),
+            entities: None,
+            partitioned_entities: None,
             node_blocks: Vec::new(),
             element_blocks: Vec::new(),
-            nodes_by_tag: HashMap::new(),
-            elements_by_tag: HashMap::new(),
+            periodic_links: Vec::new(),
+            ghost_elements: Vec::new(),
+            parametrizations: None,
+            node_data: Vec::new(),
+            element_data: Vec::new(),
+            element_node_data: Vec::new(),
+            interpolation_schemes: Vec::new(),
         }
-    }
-
-    /// Build flat lookup maps from blocks
-    pub fn build_indices(&mut self) {
-        // Build node lookup map
-        self.nodes_by_tag.clear();
-        for block in &self.node_blocks {
-            for node in &block.nodes {
-                self.nodes_by_tag.insert(node.tag, node.clone());
-            }
-        }
-
-        // Build element lookup map
-        self.elements_by_tag.clear();
-        for block in &self.element_blocks {
-            for element in &block.elements {
-                self.elements_by_tag.insert(element.tag, element.clone());
-            }
-        }
-    }
-
-    /// Get a node by its tag
-    pub fn get_node(&self, tag: usize) -> Option<&Node> {
-        self.nodes_by_tag.get(&tag)
-    }
-
-    /// Get an element by its tag
-    pub fn get_element(&self, tag: usize) -> Option<&Element> {
-        self.elements_by_tag.get(&tag)
-    }
-
-    /// Get all nodes in a specific entity
-    pub fn nodes_in_entity(&self, dim: i32, tag: i32) -> Vec<&Node> {
-        self.node_blocks
-            .iter()
-            .filter(|block| block.entity_dim == dim && block.entity_tag == tag)
-            .flat_map(|block| &block.nodes)
-            .collect()
-    }
-
-    /// Get all elements in a specific entity
-    pub fn elements_in_entity(&self, dim: i32, tag: i32) -> Vec<&Element> {
-        self.element_blocks
-            .iter()
-            .filter(|block| block.entity_dim == dim && block.entity_tag == tag)
-            .flat_map(|block| &block.elements)
-            .collect()
-    }
-
-    /// Iterate over all nodes
-    pub fn nodes_iter(&self) -> impl Iterator<Item = &Node> {
-        self.nodes_by_tag.values()
-    }
-
-    /// Iterate over all elements
-    pub fn elements_iter(&self) -> impl Iterator<Item = &Element> {
-        self.elements_by_tag.values()
-    }
-
-    /// Get physical name for a given dimension and tag
-    pub fn physical_name(&self, dim: i32, tag: i32) -> Option<&str> {
-        self.physical_names.get(&(dim, tag)).map(|s| s.as_str())
-    }
-
-    /// Get total number of nodes
-    pub fn num_nodes(&self) -> usize {
-        self.nodes_by_tag.len()
-    }
-
-    /// Get total number of elements
-    pub fn num_elements(&self) -> usize {
-        self.elements_by_tag.len()
     }
 }
 

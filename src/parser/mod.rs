@@ -3,6 +3,12 @@ pub mod physical_names;
 pub mod entities;
 pub mod nodes;
 pub mod elements;
+pub mod periodic;
+pub mod ghost_elements;
+pub mod partitioned_entities;
+pub mod parametrizations;
+pub mod post_processing;
+pub mod interpolation_scheme;
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, Lines};
@@ -47,11 +53,35 @@ pub fn parse_msh<R: std::io::Read>(reader: R) -> Result<Mesh> {
             "$Entities" => {
                 entities::parse(&mut lines, &mut mesh)?;
             }
+            "$PartitionedEntities" => {
+                partitioned_entities::parse(&mut lines, &mut mesh)?;
+            }
             "$Nodes" => {
                 nodes::parse(&mut lines, &mut mesh)?;
             }
             "$Elements" => {
                 elements::parse(&mut lines, &mut mesh)?;
+            }
+            "$Periodic" => {
+                periodic::parse(&mut lines, &mut mesh)?;
+            }
+            "$GhostElements" => {
+                ghost_elements::parse(&mut lines, &mut mesh)?;
+            }
+            "$Parametrizations" => {
+                parametrizations::parse(&mut lines, &mut mesh)?;
+            }
+            "$NodeData" => {
+                post_processing::parse_node_data(&mut lines, &mut mesh)?;
+            }
+            "$ElementData" => {
+                post_processing::parse_element_data(&mut lines, &mut mesh)?;
+            }
+            "$ElementNodeData" => {
+                post_processing::parse_element_node_data(&mut lines, &mut mesh)?;
+            }
+            "$InterpolationScheme" => {
+                interpolation_scheme::parse(&mut lines, &mut mesh)?;
             }
             _ if trimmed.starts_with('$') && !trimmed.starts_with("$End") => {
                 // Unknown section - skip it
@@ -66,9 +96,6 @@ pub fn parse_msh<R: std::io::Read>(reader: R) -> Result<Mesh> {
     if !mesh_format_parsed {
         return Err(ParseError::MissingSection("MeshFormat".to_string()));
     }
-
-    // Build flat lookup indices
-    mesh.build_indices();
 
     Ok(mesh)
 }
