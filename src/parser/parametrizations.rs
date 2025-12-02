@@ -1,180 +1,95 @@
 //! Parser for $Parametrizations section
 
-use std::io::BufReader;
-use std::io::Lines;
+use crate::error::Result;
+use crate::types::{
+    CurveParametrization, CurveParametrizationNode, Mesh, ParametrizationTriangle,
+    Parametrizations, SurfaceParametrization, SurfaceParametrizationNode,
+};
 
-use crate::error::{ParseError, Result};
-use crate::types::{Mesh, Parametrizations, CurveParametrization, SurfaceParametrization, CurveParametrizationNode, SurfaceParametrizationNode, ParametrizationTriangle};
+use super::LineReader;
 
-use super::{read_line, expect_end_marker};
-
-pub fn parse<R: std::io::Read>(
-    lines: &mut Lines<BufReader<R>>,
-    mesh: &mut Mesh,
-) -> Result<()> {
+pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
     let mut parametrizations = Parametrizations::default();
 
     // Read: numCurveParam numSurfaceParam
-    let header = read_line(lines)?;
-    let counts: Vec<usize> = header
-        .split_whitespace()
-        .map(|s| {
-            s.parse()
-                .map_err(|_| ParseError::InvalidFormat(format!("Invalid count: {}", s)))
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let header = reader.read_token_line()?;
+    header.expect_len(2)?;
 
-    if counts.len() < 2 {
-        return Err(ParseError::InvalidFormat(
-            "Invalid parametrizations header".to_string(),
-        ));
-    }
-
-    let (num_curve_param, num_surface_param) = (counts[0], counts[1]);
+    let num_curve_param = header.tokens[0].parse_usize("numCurveParam")?;
+    let num_surface_param = header.tokens[1].parse_usize("numSurfaceParam")?;
 
     // Parse curve parametrizations
     for _ in 0..num_curve_param {
-        // curveTag numNodes
-        let curve_header = read_line(lines)?;
-        let curve_parts: Vec<&str> = curve_header.split_whitespace().collect();
-        if curve_parts.len() < 2 {
-            return Err(ParseError::InvalidFormat(format!(
-                "Invalid curve parametrization header: {}",
-                curve_header
-            )));
-        }
+        // curveTag (on its own line)
+        let curve_tag_line = reader.read_token_line()?;
+        let curve_tag = curve_tag_line.tokens[0].parse_int("curveTag")?;
 
-        let curve_tag: i32 = curve_parts[0].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid curve tag: {}", curve_parts[0]))
-        })?;
-        let num_nodes: usize = curve_parts[1].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid numNodes: {}", curve_parts[1]))
-        })?;
+        // numNodes (on next line)
+        let num_nodes_line = reader.read_token_line()?;
+        let num_nodes = num_nodes_line.tokens[0].parse_usize("numNodes")?;
 
         let mut nodes = Vec::with_capacity(num_nodes);
         for _ in 0..num_nodes {
             // nodeX nodeY nodeZ nodeU
-            let node_line = read_line(lines)?;
-            let node_parts: Vec<&str> = node_line.split_whitespace().collect();
-            if node_parts.len() < 4 {
-                return Err(ParseError::InvalidFormat(format!(
-                    "Invalid curve node line: {}",
-                    node_line
-                )));
-            }
+            let node_line = reader.read_token_line()?;
+            node_line.expect_len(4)?;
 
             nodes.push(CurveParametrizationNode {
-                x: node_parts[0].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid x: {}", node_parts[0]))
-                })?,
-                y: node_parts[1].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid y: {}", node_parts[1]))
-                })?,
-                z: node_parts[2].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid z: {}", node_parts[2]))
-                })?,
-                u: node_parts[3].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid u: {}", node_parts[3]))
-                })?,
+                x: node_line.tokens[0].parse_float("x")?,
+                y: node_line.tokens[1].parse_float("y")?,
+                z: node_line.tokens[2].parse_float("z")?,
+                u: node_line.tokens[3].parse_float("u")?,
             });
         }
 
-        parametrizations.curves.push(CurveParametrization { curve_tag, nodes });
+        parametrizations
+            .curves
+            .push(CurveParametrization { curve_tag, nodes });
     }
 
     // Parse surface parametrizations
     for _ in 0..num_surface_param {
-        // surfaceTag numNodes numTriangles
-        let surface_header = read_line(lines)?;
-        let surface_parts: Vec<&str> = surface_header.split_whitespace().collect();
-        if surface_parts.len() < 3 {
-            return Err(ParseError::InvalidFormat(format!(
-                "Invalid surface parametrization header: {}",
-                surface_header
-            )));
-        }
+        // surfaceTag (on its own line)
+        let surface_tag_line = reader.read_token_line()?;
+        let surface_tag = surface_tag_line.tokens[0].parse_int("surfaceTag")?;
 
-        let surface_tag: i32 = surface_parts[0].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid surface tag: {}", surface_parts[0]))
-        })?;
-        let num_nodes: usize = surface_parts[1].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid numNodes: {}", surface_parts[1]))
-        })?;
-        let num_triangles: usize = surface_parts[2].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid numTriangles: {}", surface_parts[2]))
-        })?;
+        // numNodes numTriangles (on next line)
+        let counts_line = reader.read_token_line()?;
+        counts_line.expect_len(2)?;
+        let num_nodes = counts_line.tokens[0].parse_usize("numNodes")?;
+        let num_triangles = counts_line.tokens[1].parse_usize("numTriangles")?;
 
         let mut nodes = Vec::with_capacity(num_nodes);
         for _ in 0..num_nodes {
             // nodeX nodeY nodeZ nodeU nodeV curvMaxX curvMaxY curvMaxZ curvMinX curvMinY curvMinZ
-            let node_line = read_line(lines)?;
-            let node_parts: Vec<&str> = node_line.split_whitespace().collect();
-            if node_parts.len() < 11 {
-                return Err(ParseError::InvalidFormat(format!(
-                    "Invalid surface node line: {}",
-                    node_line
-                )));
-            }
+            let node_line = reader.read_token_line()?;
+            node_line.expect_len(11)?;
 
             nodes.push(SurfaceParametrizationNode {
-                x: node_parts[0].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid x: {}", node_parts[0]))
-                })?,
-                y: node_parts[1].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid y: {}", node_parts[1]))
-                })?,
-                z: node_parts[2].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid z: {}", node_parts[2]))
-                })?,
-                u: node_parts[3].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid u: {}", node_parts[3]))
-                })?,
-                v: node_parts[4].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid v: {}", node_parts[4]))
-                })?,
-                curv_max_x: node_parts[5].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid curvMaxX: {}", node_parts[5]))
-                })?,
-                curv_max_y: node_parts[6].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid curvMaxY: {}", node_parts[6]))
-                })?,
-                curv_max_z: node_parts[7].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid curvMaxZ: {}", node_parts[7]))
-                })?,
-                curv_min_x: node_parts[8].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid curvMinX: {}", node_parts[8]))
-                })?,
-                curv_min_y: node_parts[9].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid curvMinY: {}", node_parts[9]))
-                })?,
-                curv_min_z: node_parts[10].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid curvMinZ: {}", node_parts[10]))
-                })?,
+                x: node_line.tokens[0].parse_float("x")?,
+                y: node_line.tokens[1].parse_float("y")?,
+                z: node_line.tokens[2].parse_float("z")?,
+                u: node_line.tokens[3].parse_float("u")?,
+                v: node_line.tokens[4].parse_float("v")?,
+                curv_max_x: node_line.tokens[5].parse_float("curvMaxX")?,
+                curv_max_y: node_line.tokens[6].parse_float("curvMaxY")?,
+                curv_max_z: node_line.tokens[7].parse_float("curvMaxZ")?,
+                curv_min_x: node_line.tokens[8].parse_float("curvMinX")?,
+                curv_min_y: node_line.tokens[9].parse_float("curvMinY")?,
+                curv_min_z: node_line.tokens[10].parse_float("curvMinZ")?,
             });
         }
 
         let mut triangles = Vec::with_capacity(num_triangles);
         for _ in 0..num_triangles {
             // nodeIndex1 nodeIndex2 nodeIndex3
-            let triangle_line = read_line(lines)?;
-            let triangle_parts: Vec<&str> = triangle_line.split_whitespace().collect();
-            if triangle_parts.len() < 3 {
-                return Err(ParseError::InvalidFormat(format!(
-                    "Invalid triangle line: {}",
-                    triangle_line
-                )));
-            }
+            let triangle_line = reader.read_token_line()?;
+            triangle_line.expect_len(3)?;
 
             triangles.push(ParametrizationTriangle {
-                node_index1: triangle_parts[0].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid index1: {}", triangle_parts[0]))
-                })?,
-                node_index2: triangle_parts[1].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid index2: {}", triangle_parts[1]))
-                })?,
-                node_index3: triangle_parts[2].parse().map_err(|_| {
-                    ParseError::InvalidFormat(format!("Invalid index3: {}", triangle_parts[2]))
-                })?,
+                node_index1: triangle_line.tokens[0].parse_usize("nodeIndex1")?,
+                node_index2: triangle_line.tokens[1].parse_usize("nodeIndex2")?,
+                node_index3: triangle_line.tokens[2].parse_usize("nodeIndex3")?,
             });
         }
 
@@ -186,6 +101,9 @@ pub fn parse<R: std::io::Read>(
     }
 
     mesh.parametrizations = Some(parametrizations);
-    expect_end_marker(lines, "Parametrizations")?;
+
+    let token_line = reader.read_token_line()?;
+    token_line.expect_end_marker("Parametrizations")?;
+
     Ok(())
 }

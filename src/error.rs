@@ -1,48 +1,196 @@
+use crate::types::FileType;
+use miette::{Diagnostic, SourceSpan};
+use std::sync::Arc;
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+/// Warning generated during parsing (non-fatal issues)
+#[derive(Debug, Clone)]
+pub struct ParseWarning {
+    /// Description of the warning
+    pub message: String,
+}
+
+impl ParseWarning {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+#[derive(Debug, Error, Diagnostic)]
 pub enum ParseError {
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 
-    #[error("Invalid MSH format: {0}")]
-    InvalidFormat(String),
+    #[error("Invalid MSH format")]
+    InvalidFormat {
+        message: String,
 
-    #[error("Unsupported MSH version: {0} (only 4.1 is supported)")]
-    UnsupportedVersion(f64),
+        #[label("{message}")]
+        span: SourceSpan,
 
-    #[error("Unsupported file type: {0} (only ASCII mode is supported)")]
-    UnsupportedFileType(i32),
+        #[source_code]
+        msh_content: Arc<String>,
+    },
 
-    #[error("Invalid section: {0}")]
-    InvalidSection(String),
+    #[error("Invalid version format")]
+    InvalidVersionFormat {
+        version: String,
 
-    #[error("Invalid entity dimension: {0}")]
-    InvalidEntityDimension(i32),
+        #[label("invalid version format: {version}")]
+        span: SourceSpan,
 
-    #[error("Invalid element type: {0}")]
-    InvalidElementType(i32),
+        #[source_code]
+        msh_content: Arc<String>,
+    },
+
+    #[error("Unsupported MSH version (only 4.1 and 4.1.0 are supported)")]
+    UnsupportedVersion {
+        version: String,
+
+        #[label("unsupported version: {version}")]
+        span: SourceSpan,
+
+        #[source_code]
+        msh_content: Arc<String>,
+    },
+
+    #[error("Invalid file type")]
+    InvalidFileType {
+        file_type: i32,
+
+        #[label("invalid file type: {file_type}")]
+        span: SourceSpan,
+
+        #[source_code]
+        msh_content: Arc<String>,
+    },
+
+    #[error("Unsupported file type (only ASCII mode is supported)")]
+    UnsupportedFileType {
+        file_type: FileType,
+
+        #[label("unsupported file type: {file_type:?}")]
+        span: SourceSpan,
+
+        #[source_code]
+        msh_content: Arc<String>,
+    },
+
+    #[error("Invalid section")]
+    InvalidSection {
+        message: String,
+
+        #[label("{message}")]
+        span: SourceSpan,
+
+        #[source_code]
+        msh_content: Arc<String>,
+    },
+
+    #[error("Invalid entity dimension")]
+    InvalidEntityDimension {
+        dimension: i32,
+
+        #[label("invalid entity dimension: {dimension}")]
+        span: SourceSpan,
+
+        #[source_code]
+        msh_content: Arc<String>,
+    },
+
+    #[error("Invalid element type")]
+    InvalidElementType {
+        element_type: i32,
+
+        #[label("invalid element type: {element_type}")]
+        span: SourceSpan,
+
+        #[source_code]
+        msh_content: Arc<String>,
+    },
+
+    #[error("Invalid element topology")]
+    InvalidElementTopology {
+        element_topology: i32,
+
+        #[label("invalid element topology: {element_topology}")]
+        span: SourceSpan,
+
+        #[source_code]
+        msh_content: Arc<String>,
+    },
 
     #[error("Missing required section: {0}")]
     MissingSection(String),
 
-    #[error("Invalid data in section {0}: {1}")]
-    InvalidData(String, String),
+    #[error("Invalid data")]
+    InvalidData {
+        message: String,
 
-    #[error("Duplicate tag in {0}: {1}")]
-    DuplicateTag(String, usize),
+        #[label("{message}")]
+        span: SourceSpan,
 
-    #[error("Failed to parse integer: {0}")]
-    ParseIntError(#[from] std::num::ParseIntError),
+        #[source_code]
+        msh_content: Arc<String>,
+    },
 
-    #[error("Failed to parse float: {0}")]
-    ParseFloatError(#[from] std::num::ParseFloatError),
+    #[error("Duplicate tag: {tag}")]
+    DuplicateTag {
+        tag: usize,
+
+        #[label("duplicate tag: {tag}")]
+        span: SourceSpan,
+
+        #[source_code]
+        msh_content: Arc<String>,
+    },
+
+    #[error("Parse error")]
+    ParseIntError {
+        field: String,
+        value: String,
+
+        #[label("expected integer for '{field}', found '{value}'")]
+        span: SourceSpan,
+
+        #[source_code]
+        msh_content: Arc<String>,
+
+        #[source]
+        cause: std::num::ParseIntError,
+    },
+
+    #[error("Parse error")]
+    ParseFloatError {
+        field: String,
+        value: String,
+
+        #[label("expected float for '{field}', found '{value}'")]
+        span: SourceSpan,
+
+        #[source_code]
+        msh_content: Arc<String>,
+
+        #[source]
+        cause: std::num::ParseFloatError,
+    },
 
     #[error("Unexpected end of file")]
     UnexpectedEof,
 
-    #[error("Expected end of section {0}, but got: {1}")]
-    ExpectedEndOfSection(String, String),
+    #[error("Expected end of section marker")]
+    ExpectedEndOfSection {
+        expected: String,
+        found: String,
+
+        #[label("expected {expected}, but found: {found}")]
+        span: SourceSpan,
+
+        #[source_code]
+        msh_content: Arc<String>,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, ParseError>;

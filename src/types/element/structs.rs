@@ -40,6 +40,7 @@ macro_rules! define_point_element {
         #[derive(Debug, Clone)]
         pub struct $name {
             pub tag: usize,
+            pub node: usize,
         }
     };
 }

@@ -1,71 +1,35 @@
-use std::io::{BufReader, Lines};
-
-use crate::error::{ParseError, Result};
+use super::LineReader;
+use crate::error::Result;
 use crate::types::{Mesh, PhysicalName};
-use super::{read_line, expect_end_marker};
 
-pub fn parse<R: std::io::Read>(
-    lines: &mut Lines<BufReader<R>>,
-    mesh: &mut Mesh,
-) -> Result<()> {
-    let line = read_line(lines)?;
-    let num_physical_names: usize = line.parse()?;
+pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
+    let token_line = reader.read_token_line()?;
+    let num_physical_names = token_line.tokens[0].parse_usize("numPhysicalNames")?;
 
     for _ in 0..num_physical_names {
-        let line = read_line(lines)?;
-        let parts: Vec<&str> = line.split_whitespace().collect();
+        let token_line = reader.read_token_line()?;
 
-        if parts.len() < 3 {
-            return Err(ParseError::InvalidData(
-                "PhysicalNames".to_string(),
-                format!("Expected at least 3 parts, got {}", parts.len()),
-            ));
-        }
+        token_line.expect_min_len(3)?;
 
-        let dimension: i32 = parts[0].parse()?;
-        let tag: i32 = parts[1].parse()?;
+        let dimension = token_line.tokens[0].parse_entity_dimension("PhysicalNames")?;
+        let tag = token_line.tokens[1].parse_int("tag")?;
+        let name = token_line.tokens[2].parse_quoted_string_to_line_end()?;
 
-        // The name is quoted, need to extract it
-        let name_start = line.find('"').ok_or_else(|| {
-            ParseError::InvalidData(
-                "PhysicalNames".to_string(),
-                "Name must be quoted".to_string(),
-            )
-        })?;
-
-        let name_part = &line[name_start..];
-        let name = parse_quoted_string(name_part)?;
-
-        mesh.physical_names.push(PhysicalName::new(dimension, tag, name));
+        mesh.physical_names
+            .push(PhysicalName::new(dimension, tag, name));
     }
 
-    expect_end_marker(lines, "PhysicalNames")?;
+    let token_line = reader.read_token_line()?;
+    token_line.expect_end_marker("PhysicalNames")?;
 
     Ok(())
 }
 
-fn parse_quoted_string(s: &str) -> Result<String> {
-    if !s.starts_with('"') {
-        return Err(ParseError::InvalidData(
-            "PhysicalNames".to_string(),
-            "String must start with quote".to_string(),
-        ));
-    }
-
-    let end_quote = s[1..].find('"').ok_or_else(|| {
-        ParseError::InvalidData(
-            "PhysicalNames".to_string(),
-            "String must end with quote".to_string(),
-        )
-    })?;
-
-    Ok(s[1..=end_quote].to_string())
-}
-
 #[cfg(test)]
 mod tests {
+    use super::super::super::*;
+    use super::super::*;
     use super::*;
-    use std::io::{BufRead, Cursor};
 
     #[test]
     fn test_parse_physical_names() {
@@ -74,27 +38,21 @@ mod tests {
 3 2 "Volume"
 $EndPhysicalNames
 "#;
-        let cursor = Cursor::new(data);
-        let reader = BufReader::new(cursor);
-        let mut lines = reader.lines();
+
+        let source_file = SourceFile::new(data.into());
+        let mut reader = LineReader::new(source_file);
         let mut mesh = Mesh::default();
 
-        let result = parse(&mut lines, &mut mesh);
+        let result = parse(&mut reader, &mut mesh);
         assert!(result.is_ok());
         assert_eq!(mesh.physical_names.len(), 2);
 
-        assert_eq!(mesh.physical_names[0].dimension, 2);
+        assert_eq!(mesh.physical_names[0].dimension, EntityDimension::Surface);
         assert_eq!(mesh.physical_names[0].tag, 1);
         assert_eq!(mesh.physical_names[0].name, "Surface");
 
-        assert_eq!(mesh.physical_names[1].dimension, 3);
+        assert_eq!(mesh.physical_names[1].dimension, EntityDimension::Volume);
         assert_eq!(mesh.physical_names[1].tag, 2);
         assert_eq!(mesh.physical_names[1].name, "Volume");
-    }
-
-    #[test]
-    fn test_parse_quoted_string() {
-        assert_eq!(parse_quoted_string(r#""test""#).unwrap(), "test");
-        assert_eq!(parse_quoted_string(r#""with space""#).unwrap(), "with space");
     }
 }

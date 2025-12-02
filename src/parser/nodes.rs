@@ -1,220 +1,174 @@
-use std::io::{BufReader, Lines};
-
-use crate::error::{ParseError, Result};
-use crate::types::{Mesh, NodeBlock};
+use super::LineReader;
+use crate::error::Result;
 use crate::types::node::*;
-use super::{read_line, expect_end_marker};
+use crate::types::{EntityDimension, Mesh, NodeBlock};
 
-pub fn parse<R: std::io::Read>(
-    lines: &mut Lines<BufReader<R>>,
-    mesh: &mut Mesh,
-) -> Result<()> {
-    let line = read_line(lines)?;
-    let parts: Vec<&str> = line.split_whitespace().collect();
+pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
+    let token_line = reader.read_token_line()?;
 
-    if parts.len() != 4 {
-        return Err(ParseError::InvalidData(
-            "Nodes".to_string(),
-            format!("Expected 4 values in header, got {}", parts.len()),
-        ));
-    }
+    token_line.expect_len(4)?;
 
-    let num_entity_blocks: usize = parts[0].parse()?;
-    let _num_nodes: usize = parts[1].parse()?;
-    let _min_node_tag: usize = parts[2].parse()?;
-    let _max_node_tag: usize = parts[3].parse()?;
+    let num_entity_blocks = token_line.tokens[0].parse_usize("numEntityBlocks")?;
+    let _num_nodes = token_line.tokens[1].parse_usize("numNodes")?;
+    let _min_node_tag = token_line.tokens[2].parse_usize("minNodeTag")?;
+    let _max_node_tag = token_line.tokens[3].parse_usize("maxNodeTag")?;
 
     // Parse each entity block
     for _ in 0..num_entity_blocks {
-        let block = parse_node_block(lines)?;
+        let block = parse_node_block(reader)?;
         mesh.node_blocks.push(block);
     }
 
-    expect_end_marker(lines, "Nodes")?;
+    let token_line = reader.read_token_line()?;
+    token_line.expect_end_marker("Nodes")?;
 
     Ok(())
 }
 
-fn parse_node_block<R: std::io::Read>(
-    lines: &mut Lines<BufReader<R>>,
-) -> Result<NodeBlock> {
-    let line = read_line(lines)?;
-    let parts: Vec<&str> = line.split_whitespace().collect();
+fn parse_node_block(reader: &mut LineReader) -> Result<NodeBlock> {
+    let token_line = reader.read_token_line()?;
 
-    if parts.len() != 4 {
-        return Err(ParseError::InvalidData(
-            "Nodes/Block".to_string(),
-            format!("Expected 4 values in block header, got {}", parts.len()),
-        ));
-    }
+    token_line.expect_len(4)?;
 
-    let entity_dim: i32 = parts[0].parse()?;
-    let entity_tag: i32 = parts[1].parse()?;
-    let parametric: i32 = parts[2].parse()?;
-    let num_nodes_in_block: usize = parts[3].parse()?;
+    let entity_dim = token_line.tokens[0].parse_entity_dimension("entityDim")?;
+    let entity_tag = token_line.tokens[1].parse_int("entityTag")?;
+    let parametric_value = token_line.tokens[2].parse_int("parametric")?;
+    let num_nodes_in_block = token_line.tokens[3].parse_usize("numNodesInBlock")?;
 
-    let is_parametric = parametric != 0;
+    // Validate parametric value (must be 0 or 1)
+    let is_parametric = match parametric_value {
+        0 => false,
+        1 => true,
+        _ => {
+            return Err(token_line.tokens[2].invalid_data(format!(
+                "parametric must be 0 or 1, found {}",
+                parametric_value
+            )))
+        }
+    };
 
     // First, read all node tags
     let mut node_tags = Vec::with_capacity(num_nodes_in_block);
     for _ in 0..num_nodes_in_block {
-        let line = read_line(lines)?;
-        let tag: usize = line.parse()?;
+        let token_line = reader.read_token_line()?;
+        let tag = token_line.tokens[0].parse_usize("nodeTag")?;
         node_tags.push(tag);
     }
 
     // Then, read all coordinates and create the appropriate NodeBlock
     match (entity_dim, is_parametric) {
-        (0, _) => {
+        (EntityDimension::Point, _) => {
             // Point nodes (0D, no parametric coordinates)
             let mut nodes = Vec::with_capacity(num_nodes_in_block);
-            for tag in node_tags {
-                let line = read_line(lines)?;
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() < 3 {
-                    return Err(ParseError::InvalidData(
-                        "Nodes/Block".to_string(),
-                        format!("Expected at least 3 coordinates, got {}", parts.len()),
-                    ));
-                }
-                let x: f64 = parts[0].parse()?;
-                let y: f64 = parts[1].parse()?;
-                let z: f64 = parts[2].parse()?;
+            for tag in node_tags.into_iter() {
+                let token_line = reader.read_token_line()?;
+                token_line.expect_len(3)?;
+                let x = token_line.tokens[0].parse_float("x")?;
+                let y = token_line.tokens[1].parse_float("y")?;
+                let z = token_line.tokens[2].parse_float("z")?;
                 nodes.push(Node0D { tag, x, y, z });
             }
             Ok(NodeBlock::Point { entity_tag, nodes })
         }
-        (1, false) => {
+        (EntityDimension::Curve, false) => {
             // Curve nodes (1D, no parametric coordinates)
             let mut nodes = Vec::with_capacity(num_nodes_in_block);
-            for tag in node_tags {
-                let line = read_line(lines)?;
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() < 3 {
-                    return Err(ParseError::InvalidData(
-                        "Nodes/Block".to_string(),
-                        format!("Expected at least 3 coordinates, got {}", parts.len()),
-                    ));
-                }
-                let x: f64 = parts[0].parse()?;
-                let y: f64 = parts[1].parse()?;
-                let z: f64 = parts[2].parse()?;
+            for tag in node_tags.into_iter() {
+                let token_line = reader.read_token_line()?;
+                token_line.expect_len(3)?;
+                let x = token_line.tokens[0].parse_float("x")?;
+                let y = token_line.tokens[1].parse_float("y")?;
+                let z = token_line.tokens[2].parse_float("z")?;
                 nodes.push(Node1D { tag, x, y, z });
             }
             Ok(NodeBlock::Curve { entity_tag, nodes })
         }
-        (1, true) => {
+        (EntityDimension::Curve, true) => {
             // Curve nodes (1D, with parametric coordinates)
             let mut nodes = Vec::with_capacity(num_nodes_in_block);
-            for tag in node_tags {
-                let line = read_line(lines)?;
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() < 4 {
-                    return Err(ParseError::InvalidData(
-                        "Nodes/Block".to_string(),
-                        format!("Expected at least 4 values (x y z u), got {}", parts.len()),
-                    ));
-                }
-                let x: f64 = parts[0].parse()?;
-                let y: f64 = parts[1].parse()?;
-                let z: f64 = parts[2].parse()?;
-                let u: f64 = parts[3].parse()?;
+            for tag in node_tags.into_iter() {
+                let token_line = reader.read_token_line()?;
+                token_line.expect_len(4)?;
+                let x = token_line.tokens[0].parse_float("x")?;
+                let y = token_line.tokens[1].parse_float("y")?;
+                let z = token_line.tokens[2].parse_float("z")?;
+                let u = token_line.tokens[3].parse_float("u")?;
                 nodes.push(Node1DParametric { tag, x, y, z, u });
             }
             Ok(NodeBlock::CurveParametric { entity_tag, nodes })
         }
-        (2, false) => {
+        (EntityDimension::Surface, false) => {
             // Surface nodes (2D, no parametric coordinates)
             let mut nodes = Vec::with_capacity(num_nodes_in_block);
-            for tag in node_tags {
-                let line = read_line(lines)?;
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() < 3 {
-                    return Err(ParseError::InvalidData(
-                        "Nodes/Block".to_string(),
-                        format!("Expected at least 3 coordinates, got {}", parts.len()),
-                    ));
-                }
-                let x: f64 = parts[0].parse()?;
-                let y: f64 = parts[1].parse()?;
-                let z: f64 = parts[2].parse()?;
+            for tag in node_tags.into_iter() {
+                let token_line = reader.read_token_line()?;
+                token_line.expect_len(3)?;
+                let x = token_line.tokens[0].parse_float("x")?;
+                let y = token_line.tokens[1].parse_float("y")?;
+                let z = token_line.tokens[2].parse_float("z")?;
                 nodes.push(Node2D { tag, x, y, z });
             }
             Ok(NodeBlock::Surface { entity_tag, nodes })
         }
-        (2, true) => {
+        (EntityDimension::Surface, true) => {
             // Surface nodes (2D, with parametric coordinates)
             let mut nodes = Vec::with_capacity(num_nodes_in_block);
-            for tag in node_tags {
-                let line = read_line(lines)?;
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() < 5 {
-                    return Err(ParseError::InvalidData(
-                        "Nodes/Block".to_string(),
-                        format!("Expected at least 5 values (x y z u v), got {}", parts.len()),
-                    ));
-                }
-                let x: f64 = parts[0].parse()?;
-                let y: f64 = parts[1].parse()?;
-                let z: f64 = parts[2].parse()?;
-                let u: f64 = parts[3].parse()?;
-                let v: f64 = parts[4].parse()?;
+            for tag in node_tags.into_iter() {
+                let token_line = reader.read_token_line()?;
+                token_line.expect_len(5)?;
+                let x = token_line.tokens[0].parse_float("x")?;
+                let y = token_line.tokens[1].parse_float("y")?;
+                let z = token_line.tokens[2].parse_float("z")?;
+                let u = token_line.tokens[3].parse_float("u")?;
+                let v = token_line.tokens[4].parse_float("v")?;
                 nodes.push(Node2DParametric { tag, x, y, z, u, v });
             }
             Ok(NodeBlock::SurfaceParametric { entity_tag, nodes })
         }
-        (3, false) => {
+        (EntityDimension::Volume, false) => {
             // Volume nodes (3D, no parametric coordinates)
             let mut nodes = Vec::with_capacity(num_nodes_in_block);
-            for tag in node_tags {
-                let line = read_line(lines)?;
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() < 3 {
-                    return Err(ParseError::InvalidData(
-                        "Nodes/Block".to_string(),
-                        format!("Expected at least 3 coordinates, got {}", parts.len()),
-                    ));
-                }
-                let x: f64 = parts[0].parse()?;
-                let y: f64 = parts[1].parse()?;
-                let z: f64 = parts[2].parse()?;
+            for tag in node_tags.into_iter() {
+                let token_line = reader.read_token_line()?;
+                token_line.expect_len(3)?;
+                let x = token_line.tokens[0].parse_float("x")?;
+                let y = token_line.tokens[1].parse_float("y")?;
+                let z = token_line.tokens[2].parse_float("z")?;
                 nodes.push(Node3D { tag, x, y, z });
             }
             Ok(NodeBlock::Volume { entity_tag, nodes })
         }
-        (3, true) => {
+        (EntityDimension::Volume, true) => {
             // Volume nodes (3D, with parametric coordinates)
             let mut nodes = Vec::with_capacity(num_nodes_in_block);
-            for tag in node_tags {
-                let line = read_line(lines)?;
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() < 6 {
-                    return Err(ParseError::InvalidData(
-                        "Nodes/Block".to_string(),
-                        format!("Expected at least 6 values (x y z u v w), got {}", parts.len()),
-                    ));
-                }
-                let x: f64 = parts[0].parse()?;
-                let y: f64 = parts[1].parse()?;
-                let z: f64 = parts[2].parse()?;
-                let u: f64 = parts[3].parse()?;
-                let v: f64 = parts[4].parse()?;
-                let w: f64 = parts[5].parse()?;
-                nodes.push(Node3DParametric { tag, x, y, z, u, v, w });
+            for tag in node_tags.into_iter() {
+                let token_line = reader.read_token_line()?;
+                token_line.expect_len(6)?;
+                let x = token_line.tokens[0].parse_float("x")?;
+                let y = token_line.tokens[1].parse_float("y")?;
+                let z = token_line.tokens[2].parse_float("z")?;
+                let u = token_line.tokens[3].parse_float("u")?;
+                let v = token_line.tokens[4].parse_float("v")?;
+                let w = token_line.tokens[5].parse_float("w")?;
+                nodes.push(Node3DParametric {
+                    tag,
+                    x,
+                    y,
+                    z,
+                    u,
+                    v,
+                    w,
+                });
             }
             Ok(NodeBlock::VolumeParametric { entity_tag, nodes })
         }
-        _ => Err(ParseError::InvalidData(
-            "Nodes/Block".to_string(),
-            format!("Invalid entity dimension: {}", entity_dim),
-        )),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::*;
     use super::*;
-    use std::io::{BufRead, Cursor};
 
     #[test]
     fn test_parse_nodes() {
@@ -228,12 +182,12 @@ mod tests {
 1.0 1.0 0.0
 $EndNodes
 "#;
-        let cursor = Cursor::new(data);
-        let reader = BufReader::new(cursor);
-        let mut lines = reader.lines();
+
+        let source_file = SourceFile::new(data.into());
+        let mut reader = LineReader::new(source_file);
         let mut mesh = Mesh::default();
 
-        let result = parse(&mut lines, &mut mesh);
+        let result = parse(&mut reader, &mut mesh);
         assert!(result.is_ok());
         assert_eq!(mesh.node_blocks.len(), 1);
 

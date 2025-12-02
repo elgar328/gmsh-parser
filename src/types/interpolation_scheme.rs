@@ -2,6 +2,40 @@
 //!
 //! Defines interpolation schemes for post-processing views.
 
+/// Element topology types for interpolation
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum ElementTopology {
+    Points = 1,
+    Lines = 2,
+    Triangles = 3,
+    Quadrangles = 4,
+    Tetrahedra = 5,
+    Pyramids = 6,
+    Prisms = 7,
+    Hexahedra = 8,
+    Polygons = 9,
+    Polyhedra = 10,
+}
+
+impl ElementTopology {
+    pub fn from_i32(value: i32) -> Option<Self> {
+        match value {
+            1 => Some(ElementTopology::Points),
+            2 => Some(ElementTopology::Lines),
+            3 => Some(ElementTopology::Triangles),
+            4 => Some(ElementTopology::Quadrangles),
+            5 => Some(ElementTopology::Tetrahedra),
+            6 => Some(ElementTopology::Pyramids),
+            7 => Some(ElementTopology::Prisms),
+            8 => Some(ElementTopology::Hexahedra),
+            9 => Some(ElementTopology::Polygons),
+            10 => Some(ElementTopology::Polyhedra),
+            _ => None,
+        }
+    }
+}
+
 /// Interpolation matrix
 #[derive(Debug, Clone)]
 pub struct InterpolationMatrix {
@@ -13,11 +47,8 @@ pub struct InterpolationMatrix {
 /// Element topology interpolation
 #[derive(Debug, Clone)]
 pub struct ElementTopologyInterpolation {
-    /// Element topology ID:
-    /// 1=points, 2=lines, 3=triangles, 4=quadrangles,
-    /// 5=tetrahedra, 6=pyramids, 7=prisms, 8=hexahedra,
-    /// 9=polygons, 10=polyhedra
-    pub element_topology: i32,
+    /// Element topology type
+    pub element_topology: ElementTopology,
     /// Interpolation matrices for this topology
     pub matrices: Vec<InterpolationMatrix>,
 }

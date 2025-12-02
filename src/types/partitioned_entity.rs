@@ -2,6 +2,8 @@
 //!
 //! Defines partitioned entities for parallel mesh processing.
 
+use crate::types::EntityDimension;
+
 /// Ghost entity information
 #[derive(Debug, Clone)]
 pub struct GhostEntity {
@@ -13,7 +15,7 @@ pub struct GhostEntity {
 #[derive(Debug, Clone)]
 pub struct PartitionedPoint {
     pub tag: i32,
-    pub parent_dim: i32,
+    pub parent_dim: EntityDimension,
     pub parent_tag: i32,
     pub partition_tags: Vec<i32>,
     pub x: f64,
@@ -26,7 +28,7 @@ pub struct PartitionedPoint {
 #[derive(Debug, Clone)]
 pub struct PartitionedCurve {
     pub tag: i32,
-    pub parent_dim: i32,
+    pub parent_dim: EntityDimension,
     pub parent_tag: i32,
     pub partition_tags: Vec<i32>,
     pub min_x: f64,
@@ -43,7 +45,7 @@ pub struct PartitionedCurve {
 #[derive(Debug, Clone)]
 pub struct PartitionedSurface {
     pub tag: i32,
-    pub parent_dim: i32,
+    pub parent_dim: EntityDimension,
     pub parent_tag: i32,
     pub partition_tags: Vec<i32>,
     pub min_x: f64,
@@ -60,7 +62,7 @@ pub struct PartitionedSurface {
 #[derive(Debug, Clone)]
 pub struct PartitionedVolume {
     pub tag: i32,
-    pub parent_dim: i32,
+    pub parent_dim: EntityDimension,
     pub parent_tag: i32,
     pub partition_tags: Vec<i32>,
     pub min_x: f64,

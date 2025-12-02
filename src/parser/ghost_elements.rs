@@ -1,56 +1,30 @@
 //! Parser for $GhostElements section
 
-use std::io::BufReader;
-use std::io::Lines;
+use crate::error::Result;
+use crate::types::{GhostElement, Mesh};
 
-use crate::error::{ParseError, Result};
-use crate::types::{Mesh, GhostElement};
+use super::LineReader;
 
-use super::{read_line, expect_end_marker};
-
-pub fn parse<R: std::io::Read>(
-    lines: &mut Lines<BufReader<R>>,
-    mesh: &mut Mesh,
-) -> Result<()> {
+pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
     // Read number of ghost elements
-    let header = read_line(lines)?;
-    let num_ghost_elements: usize = header
-        .parse()
-        .map_err(|_| ParseError::InvalidFormat(format!("Invalid numGhostElements: {}", header)))?;
+    let token_line = reader.read_token_line()?;
+    let num_ghost_elements = token_line.tokens[0].parse_usize("numGhostElements")?;
 
     for _ in 0..num_ghost_elements {
         // Read: elementTag partitionTag numGhostPartitions ghostPartitionTag ...
-        let line = read_line(lines)?;
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 3 {
-            return Err(ParseError::InvalidFormat(format!(
-                "Invalid ghost element line: {}",
-                line
-            )));
-        }
+        let token_line = reader.read_token_line()?;
 
-        let element_tag: usize = parts[0].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid element_tag: {}", parts[0]))
-        })?;
-        let partition_tag: i32 = parts[1].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid partition_tag: {}", parts[1]))
-        })?;
-        let num_ghost_partitions: usize = parts[2].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid numGhostPartitions: {}", parts[2]))
-        })?;
+        token_line.expect_min_len(3)?;
 
-        if parts.len() < 3 + num_ghost_partitions {
-            return Err(ParseError::InvalidFormat(format!(
-                "Not enough ghost partition tags in line: {}",
-                line
-            )));
-        }
+        let element_tag = token_line.tokens[0].parse_usize("elementTag")?;
+        let partition_tag = token_line.tokens[1].parse_int("partitionTag")?;
+        let num_ghost_partitions = token_line.tokens[2].parse_usize("numGhostPartitions")?;
+
+        token_line.expect_min_len(3 + num_ghost_partitions)?;
 
         let mut ghost_partition_tags = Vec::with_capacity(num_ghost_partitions);
-        for i in 0..num_ghost_partitions {
-            let tag: i32 = parts[3 + i].parse().map_err(|_| {
-                ParseError::InvalidFormat(format!("Invalid ghost partition tag: {}", parts[3 + i]))
-            })?;
+        for j in 0..num_ghost_partitions {
+            let tag = token_line.tokens[3 + j].parse_int("ghostPartitionTag")?;
             ghost_partition_tags.push(tag);
         }
 
@@ -61,14 +35,16 @@ pub fn parse<R: std::io::Read>(
         });
     }
 
-    expect_end_marker(lines, "GhostElements")?;
+    let token_line = reader.read_token_line()?;
+    token_line.expect_end_marker("GhostElements")?;
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::*;
     use super::*;
-    use std::io::{BufRead, Cursor};
 
     #[test]
     fn test_parse_ghost_elements() {
@@ -77,12 +53,12 @@ mod tests {
 5 1 1 0
 $EndGhostElements
 "#;
-        let cursor = Cursor::new(data);
-        let reader = BufReader::new(cursor);
-        let mut lines = reader.lines();
+
+        let source_file = SourceFile::new(data.into());
+        let mut reader = LineReader::new(source_file);
         let mut mesh = Mesh::default();
 
-        parse(&mut lines, &mut mesh).unwrap();
+        parse(&mut reader, &mut mesh).unwrap();
 
         assert_eq!(mesh.ghost_elements.len(), 2);
 

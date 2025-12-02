@@ -1,167 +1,105 @@
 //! Parser for $PartitionedEntities section
 
-use std::io::BufReader;
-use std::io::Lines;
+use crate::error::Result;
+use crate::types::{
+    GhostEntity, Mesh, PartitionedCurve, PartitionedEntities, PartitionedPoint, PartitionedSurface,
+    PartitionedVolume,
+};
 
-use crate::error::{ParseError, Result};
-use crate::types::{Mesh, PartitionedEntities, GhostEntity, PartitionedPoint, PartitionedCurve, PartitionedSurface, PartitionedVolume};
+use super::LineReader;
 
-use super::{read_line, expect_end_marker};
-
-pub fn parse<R: std::io::Read>(
-    lines: &mut Lines<BufReader<R>>,
-    mesh: &mut Mesh,
-) -> Result<()> {
+pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
     let mut partitioned = PartitionedEntities::default();
 
     // Read: numPartitions
-    let header1 = read_line(lines)?;
-    partitioned.num_partitions = header1.parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid numPartitions: {}", header1))
-    })?;
+    let token_line = reader.read_token_line()?;
+    partitioned.num_partitions = token_line.tokens[0].parse_usize("numPartitions")?;
 
     // Read: numGhostEntities
-    let header2 = read_line(lines)?;
-    let num_ghost_entities: usize = header2.parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid numGhostEntities: {}", header2))
-    })?;
+    let token_line = reader.read_token_line()?;
+    let num_ghost_entities = token_line.tokens[0].parse_usize("numGhostEntities")?;
 
     // Read ghost entities
     for _ in 0..num_ghost_entities {
-        let line = read_line(lines)?;
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 2 {
-            return Err(ParseError::InvalidFormat(format!(
-                "Invalid ghost entity line: {}",
-                line
-            )));
-        }
+        let token_line = reader.read_token_line()?;
+        token_line.expect_len(2)?;
 
         partitioned.ghost_entities.push(GhostEntity {
-            tag: parts[0].parse().map_err(|_| {
-                ParseError::InvalidFormat(format!("Invalid ghost entity tag: {}", parts[0]))
-            })?,
-            partition: parts[1].parse().map_err(|_| {
-                ParseError::InvalidFormat(format!("Invalid ghost entity partition: {}", parts[1]))
-            })?,
+            tag: token_line.tokens[0].parse_int("ghostEntityTag")?,
+            partition: token_line.tokens[1].parse_int("ghostEntityPartition")?,
         });
     }
 
     // Read: numPoints numCurves numSurfaces numVolumes
-    let counts_line = read_line(lines)?;
-    let counts: Vec<usize> = counts_line
-        .split_whitespace()
-        .map(|s| {
-            s.parse()
-                .map_err(|_| ParseError::InvalidFormat(format!("Invalid entity count: {}", s)))
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let token_line = reader.read_token_line()?;
 
-    if counts.len() < 4 {
-        return Err(ParseError::InvalidFormat(
-            "Invalid entity counts line".to_string(),
-        ));
-    }
-
-    let (num_points, num_curves, num_surfaces, num_volumes) =
-        (counts[0], counts[1], counts[2], counts[3]);
+    token_line.expect_len(4)?;
+    let num_points = token_line.tokens[0].parse_usize("numPoints")?;
+    let num_curves = token_line.tokens[1].parse_usize("numCurves")?;
+    let num_surfaces = token_line.tokens[2].parse_usize("numSurfaces")?;
+    let num_volumes = token_line.tokens[3].parse_usize("numVolumes")?;
 
     // Parse points
     for _ in 0..num_points {
-        partitioned.points.push(parse_partitioned_point(lines)?);
+        partitioned.points.push(parse_partitioned_point(reader)?);
     }
 
     // Parse curves
     for _ in 0..num_curves {
-        partitioned.curves.push(parse_partitioned_curve(lines)?);
+        partitioned.curves.push(parse_partitioned_curve(reader)?);
     }
 
     // Parse surfaces
     for _ in 0..num_surfaces {
-        partitioned.surfaces.push(parse_partitioned_surface(lines)?);
+        partitioned
+            .surfaces
+            .push(parse_partitioned_surface(reader)?);
     }
 
     // Parse volumes
     for _ in 0..num_volumes {
-        partitioned.volumes.push(parse_partitioned_volume(lines)?);
+        partitioned.volumes.push(parse_partitioned_volume(reader)?);
     }
 
     mesh.partitioned_entities = Some(partitioned);
-    expect_end_marker(lines, "PartitionedEntities")?;
+
+    let token_line = reader.read_token_line()?;
+    token_line.expect_end_marker("PartitionedEntities")?;
+
     Ok(())
 }
 
-fn parse_partitioned_point<R: std::io::Read>(
-    lines: &mut Lines<BufReader<R>>,
-) -> Result<PartitionedPoint> {
-    // Line 1: pointTag parentDim parentTag numPartitions partitionTag ...
-    let line1 = read_line(lines)?;
-    let parts1: Vec<&str> = line1.split_whitespace().collect();
-    if parts1.len() < 4 {
-        return Err(ParseError::InvalidFormat(format!(
-            "Invalid partitioned point line 1: {}",
-            line1
-        )));
-    }
+fn parse_partitioned_point(reader: &mut LineReader) -> Result<PartitionedPoint> {
+    // Single line: pointTag parentDim parentTag numPartitions partitionTag ... x y z numPhysicalTags physicalTag ...
+    let token_line = reader.read_token_line()?;
 
-    let tag: i32 = parts1[0].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid point tag: {}", parts1[0]))
-    })?;
-    let parent_dim: i32 = parts1[1].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid parent_dim: {}", parts1[1]))
-    })?;
-    let parent_tag: i32 = parts1[2].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid parent_tag: {}", parts1[2]))
-    })?;
-    let num_partitions: usize = parts1[3].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid numPartitions: {}", parts1[3]))
-    })?;
+    token_line.expect_min_len(4)?;
 
+    let tag = token_line.tokens[0].parse_int("tag")?;
+    let parent_dim = token_line.tokens[1].parse_entity_dimension("parent_dim")?;
+    let parent_tag = token_line.tokens[2].parse_int("parent_tag")?;
+    let num_partitions = token_line.tokens[3].parse_usize("numPartitions")?;
+
+    token_line.expect_min_len(4 + num_partitions)?;
     let mut partition_tags = Vec::with_capacity(num_partitions);
     for i in 0..num_partitions {
-        if 4 + i >= parts1.len() {
-            return Err(ParseError::InvalidFormat(
-                "Not enough partition tags".to_string(),
-            ));
-        }
-        partition_tags.push(parts1[4 + i].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid partition tag: {}", parts1[4 + i]))
-        })?);
+        partition_tags.push(token_line.tokens[4 + i].parse_int("partitionTag")?);
     }
 
-    // Line 2: X Y Z numPhysicalTags physicalTag ...
-    let line2 = read_line(lines)?;
-    let parts2: Vec<&str> = line2.split_whitespace().collect();
-    if parts2.len() < 4 {
-        return Err(ParseError::InvalidFormat(format!(
-            "Invalid partitioned point line 2: {}",
-            line2
-        )));
-    }
+    // Continue parsing from the same line: x y z numPhysicalTags physicalTag ...
+    let coord_offset = 4 + num_partitions;
+    token_line.expect_min_len(coord_offset + 4)?;
 
-    let x: f64 = parts2[0].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid X: {}", parts2[0]))
-    })?;
-    let y: f64 = parts2[1].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid Y: {}", parts2[1]))
-    })?;
-    let z: f64 = parts2[2].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid Z: {}", parts2[2]))
-    })?;
-    let num_physical_tags: usize = parts2[3].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid numPhysicalTags: {}", parts2[3]))
-    })?;
+    let x = token_line.tokens[coord_offset].parse_float("x")?;
+    let y = token_line.tokens[coord_offset + 1].parse_float("y")?;
+    let z = token_line.tokens[coord_offset + 2].parse_float("z")?;
+    let num_physical_tags = token_line.tokens[coord_offset + 3].parse_usize("numPhysicalTags")?;
 
+    token_line.expect_min_len(coord_offset + 4 + num_physical_tags)?;
     let mut physical_tags = Vec::with_capacity(num_physical_tags);
     for i in 0..num_physical_tags {
-        if 4 + i >= parts2.len() {
-            return Err(ParseError::InvalidFormat(
-                "Not enough physical tags".to_string(),
-            ));
-        }
-        physical_tags.push(parts2[4 + i].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid physical tag: {}", parts2[4 + i]))
-        })?);
+        let idx = coord_offset + 4 + i;
+        physical_tags.push(token_line.tokens[idx].parse_int("physicalTag")?);
     }
 
     Ok(PartitionedPoint {
@@ -176,111 +114,53 @@ fn parse_partitioned_point<R: std::io::Read>(
     })
 }
 
-fn parse_partitioned_curve<R: std::io::Read>(
-    lines: &mut Lines<BufReader<R>>,
-) -> Result<PartitionedCurve> {
-    // Line 1: curveTag parentDim parentTag numPartitions partitionTag ...
-    let line1 = read_line(lines)?;
-    let parts1: Vec<&str> = line1.split_whitespace().collect();
-    if parts1.len() < 4 {
-        return Err(ParseError::InvalidFormat(format!(
-            "Invalid partitioned curve line 1: {}",
-            line1
-        )));
-    }
+fn parse_partitioned_curve(reader: &mut LineReader) -> Result<PartitionedCurve> {
+    // Single line: curveTag parentDim parentTag numPartitions partitionTag ... minX minY minZ maxX maxY maxZ numPhysicalTags physicalTag ... numBoundingPoints pointTag ...
+    let token_line = reader.read_token_line()?;
+    token_line.expect_min_len(4)?;
 
-    let tag: i32 = parts1[0].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid curve tag: {}", parts1[0]))
-    })?;
-    let parent_dim: i32 = parts1[1].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid parent_dim: {}", parts1[1]))
-    })?;
-    let parent_tag: i32 = parts1[2].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid parent_tag: {}", parts1[2]))
-    })?;
-    let num_partitions: usize = parts1[3].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid numPartitions: {}", parts1[3]))
-    })?;
+    let tag = token_line.tokens[0].parse_int("tag")?;
+    let parent_dim = token_line.tokens[1].parse_entity_dimension("parent_dim")?;
+    let parent_tag = token_line.tokens[2].parse_int("parent_tag")?;
+    let num_partitions = token_line.tokens[3].parse_usize("numPartitions")?;
 
+    token_line.expect_min_len(4 + num_partitions)?;
     let mut partition_tags = Vec::with_capacity(num_partitions);
     for i in 0..num_partitions {
-        if 4 + i >= parts1.len() {
-            return Err(ParseError::InvalidFormat(
-                "Not enough partition tags".to_string(),
-            ));
-        }
-        partition_tags.push(parts1[4 + i].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid partition tag: {}", parts1[4 + i]))
-        })?);
+        partition_tags.push(token_line.tokens[4 + i].parse_int("partitionTag")?);
     }
 
-    // Line 2: minX minY minZ maxX maxY maxZ numPhysicalTags physicalTag ...
-    let line2 = read_line(lines)?;
-    let parts2: Vec<&str> = line2.split_whitespace().collect();
-    if parts2.len() < 7 {
-        return Err(ParseError::InvalidFormat(format!(
-            "Invalid partitioned curve line 2: {}",
-            line2
-        )));
-    }
+    // Continue parsing: minX minY minZ maxX maxY maxZ numPhysicalTags physicalTag ...
+    let bbox_offset = 4 + num_partitions;
+    token_line.expect_min_len(bbox_offset + 7)?;
 
-    let min_x: f64 = parts2[0].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid minX: {}", parts2[0]))
-    })?;
-    let min_y: f64 = parts2[1].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid minY: {}", parts2[1]))
-    })?;
-    let min_z: f64 = parts2[2].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid minZ: {}", parts2[2]))
-    })?;
-    let max_x: f64 = parts2[3].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid maxX: {}", parts2[3]))
-    })?;
-    let max_y: f64 = parts2[4].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid maxY: {}", parts2[4]))
-    })?;
-    let max_z: f64 = parts2[5].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid maxZ: {}", parts2[5]))
-    })?;
-    let num_physical_tags: usize = parts2[6].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid numPhysicalTags: {}", parts2[6]))
-    })?;
+    let min_x = token_line.tokens[bbox_offset].parse_float("minX")?;
+    let min_y = token_line.tokens[bbox_offset + 1].parse_float("minY")?;
+    let min_z = token_line.tokens[bbox_offset + 2].parse_float("minZ")?;
+    let max_x = token_line.tokens[bbox_offset + 3].parse_float("maxX")?;
+    let max_y = token_line.tokens[bbox_offset + 4].parse_float("maxY")?;
+    let max_z = token_line.tokens[bbox_offset + 5].parse_float("maxZ")?;
+    let num_physical_tags = token_line.tokens[bbox_offset + 6].parse_usize("numPhysicalTags")?;
 
+    token_line.expect_min_len(bbox_offset + 7 + num_physical_tags)?;
     let mut physical_tags = Vec::with_capacity(num_physical_tags);
     for i in 0..num_physical_tags {
-        if 7 + i >= parts2.len() {
-            return Err(ParseError::InvalidFormat(
-                "Not enough physical tags".to_string(),
-            ));
-        }
-        physical_tags.push(parts2[7 + i].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid physical tag: {}", parts2[7 + i]))
-        })?);
+        let idx = bbox_offset + 7 + i;
+        physical_tags.push(token_line.tokens[idx].parse_int("physicalTag")?);
     }
 
-    // Line 3: numBoundingPoints pointTag ...
-    let line3 = read_line(lines)?;
-    let parts3: Vec<&str> = line3.split_whitespace().collect();
-    if parts3.is_empty() {
-        return Err(ParseError::InvalidFormat(
-            "Missing numBoundingPoints".to_string(),
-        ));
-    }
+    // Continue parsing: numBoundingPoints pointTag ...
+    let boundary_offset = bbox_offset + 7 + num_physical_tags;
+    token_line.expect_min_len(boundary_offset)?;
 
-    let num_bounding_points: usize = parts3[0].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid numBoundingPoints: {}", parts3[0]))
-    })?;
+    let num_bounding_points =
+        token_line.tokens[boundary_offset].parse_usize("numBoundingPoints")?;
 
+    token_line.expect_min_len(boundary_offset + 1 + num_bounding_points)?;
     let mut bounding_points = Vec::with_capacity(num_bounding_points);
     for i in 0..num_bounding_points {
-        if 1 + i >= parts3.len() {
-            return Err(ParseError::InvalidFormat(
-                "Not enough bounding points".to_string(),
-            ));
-        }
-        bounding_points.push(parts3[1 + i].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid bounding point: {}", parts3[1 + i]))
-        })?);
+        let idx = boundary_offset + 1 + i;
+        bounding_points.push(token_line.tokens[idx].parse_int("boundingPoint")?);
     }
 
     Ok(PartitionedCurve {
@@ -299,111 +179,54 @@ fn parse_partitioned_curve<R: std::io::Read>(
     })
 }
 
-fn parse_partitioned_surface<R: std::io::Read>(
-    lines: &mut Lines<BufReader<R>>,
-) -> Result<PartitionedSurface> {
-    // Line 1: surfaceTag parentDim parentTag numPartitions partitionTag ...
-    let line1 = read_line(lines)?;
-    let parts1: Vec<&str> = line1.split_whitespace().collect();
-    if parts1.len() < 4 {
-        return Err(ParseError::InvalidFormat(format!(
-            "Invalid partitioned surface line 1: {}",
-            line1
-        )));
-    }
+fn parse_partitioned_surface(reader: &mut LineReader) -> Result<PartitionedSurface> {
+    // Single line: surfaceTag parentDim parentTag numPartitions partitionTag ... minX minY minZ maxX maxY maxZ numPhysicalTags physicalTag ... numBoundingCurves curveTag ...
+    let token_line = reader.read_token_line()?;
 
-    let tag: i32 = parts1[0].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid surface tag: {}", parts1[0]))
-    })?;
-    let parent_dim: i32 = parts1[1].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid parent_dim: {}", parts1[1]))
-    })?;
-    let parent_tag: i32 = parts1[2].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid parent_tag: {}", parts1[2]))
-    })?;
-    let num_partitions: usize = parts1[3].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid numPartitions: {}", parts1[3]))
-    })?;
+    token_line.expect_min_len(4)?;
 
+    let tag = token_line.tokens[0].parse_int("tag")?;
+    let parent_dim = token_line.tokens[1].parse_entity_dimension("parent_dim")?;
+    let parent_tag = token_line.tokens[2].parse_int("parent_tag")?;
+    let num_partitions = token_line.tokens[3].parse_usize("numPartitions")?;
+
+    token_line.expect_min_len(4 + num_partitions)?;
     let mut partition_tags = Vec::with_capacity(num_partitions);
     for i in 0..num_partitions {
-        if 4 + i >= parts1.len() {
-            return Err(ParseError::InvalidFormat(
-                "Not enough partition tags".to_string(),
-            ));
-        }
-        partition_tags.push(parts1[4 + i].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid partition tag: {}", parts1[4 + i]))
-        })?);
+        partition_tags.push(token_line.tokens[4 + i].parse_int("partitionTag")?);
     }
 
-    // Line 2: minX minY minZ maxX maxY maxZ numPhysicalTags physicalTag ...
-    let line2 = read_line(lines)?;
-    let parts2: Vec<&str> = line2.split_whitespace().collect();
-    if parts2.len() < 7 {
-        return Err(ParseError::InvalidFormat(format!(
-            "Invalid partitioned surface line 2: {}",
-            line2
-        )));
-    }
+    // Continue parsing: minX minY minZ maxX maxY maxZ numPhysicalTags physicalTag ...
+    let bbox_offset = 4 + num_partitions;
+    token_line.expect_min_len(bbox_offset + 7)?;
 
-    let min_x: f64 = parts2[0].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid minX: {}", parts2[0]))
-    })?;
-    let min_y: f64 = parts2[1].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid minY: {}", parts2[1]))
-    })?;
-    let min_z: f64 = parts2[2].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid minZ: {}", parts2[2]))
-    })?;
-    let max_x: f64 = parts2[3].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid maxX: {}", parts2[3]))
-    })?;
-    let max_y: f64 = parts2[4].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid maxY: {}", parts2[4]))
-    })?;
-    let max_z: f64 = parts2[5].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid maxZ: {}", parts2[5]))
-    })?;
-    let num_physical_tags: usize = parts2[6].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid numPhysicalTags: {}", parts2[6]))
-    })?;
+    let min_x = token_line.tokens[bbox_offset].parse_float("minX")?;
+    let min_y = token_line.tokens[bbox_offset + 1].parse_float("minY")?;
+    let min_z = token_line.tokens[bbox_offset + 2].parse_float("minZ")?;
+    let max_x = token_line.tokens[bbox_offset + 3].parse_float("maxX")?;
+    let max_y = token_line.tokens[bbox_offset + 4].parse_float("maxY")?;
+    let max_z = token_line.tokens[bbox_offset + 5].parse_float("maxZ")?;
+    let num_physical_tags = token_line.tokens[bbox_offset + 6].parse_usize("numPhysicalTags")?;
 
+    token_line.expect_min_len(bbox_offset + 7 + num_physical_tags)?;
     let mut physical_tags = Vec::with_capacity(num_physical_tags);
     for i in 0..num_physical_tags {
-        if 7 + i >= parts2.len() {
-            return Err(ParseError::InvalidFormat(
-                "Not enough physical tags".to_string(),
-            ));
-        }
-        physical_tags.push(parts2[7 + i].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid physical tag: {}", parts2[7 + i]))
-        })?);
+        let idx = bbox_offset + 7 + i;
+        physical_tags.push(token_line.tokens[idx].parse_int("physicalTag")?);
     }
 
-    // Line 3: numBoundingCurves curveTag ...
-    let line3 = read_line(lines)?;
-    let parts3: Vec<&str> = line3.split_whitespace().collect();
-    if parts3.is_empty() {
-        return Err(ParseError::InvalidFormat(
-            "Missing numBoundingCurves".to_string(),
-        ));
-    }
+    // Continue parsing: numBoundingCurves curveTag ...
+    let boundary_offset = bbox_offset + 7 + num_physical_tags;
+    token_line.expect_min_len(boundary_offset)?;
 
-    let num_bounding_curves: usize = parts3[0].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid numBoundingCurves: {}", parts3[0]))
-    })?;
+    let num_bounding_curves =
+        token_line.tokens[boundary_offset].parse_usize("numBoundingCurves")?;
 
+    token_line.expect_min_len(boundary_offset + 1 + num_bounding_curves)?;
     let mut bounding_curves = Vec::with_capacity(num_bounding_curves);
     for i in 0..num_bounding_curves {
-        if 1 + i >= parts3.len() {
-            return Err(ParseError::InvalidFormat(
-                "Not enough bounding curves".to_string(),
-            ));
-        }
-        bounding_curves.push(parts3[1 + i].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid bounding curve: {}", parts3[1 + i]))
-        })?);
+        let idx = boundary_offset + 1 + i;
+        bounding_curves.push(token_line.tokens[idx].parse_int("boundingCurve")?);
     }
 
     Ok(PartitionedSurface {
@@ -422,111 +245,53 @@ fn parse_partitioned_surface<R: std::io::Read>(
     })
 }
 
-fn parse_partitioned_volume<R: std::io::Read>(
-    lines: &mut Lines<BufReader<R>>,
-) -> Result<PartitionedVolume> {
-    // Line 1: volumeTag parentDim parentTag numPartitions partitionTag ...
-    let line1 = read_line(lines)?;
-    let parts1: Vec<&str> = line1.split_whitespace().collect();
-    if parts1.len() < 4 {
-        return Err(ParseError::InvalidFormat(format!(
-            "Invalid partitioned volume line 1: {}",
-            line1
-        )));
-    }
+fn parse_partitioned_volume(reader: &mut LineReader) -> Result<PartitionedVolume> {
+    // Single line: volumeTag parentDim parentTag numPartitions partitionTag ... minX minY minZ maxX maxY maxZ numPhysicalTags physicalTag ... numBoundingSurfaces surfaceTag ...
+    let token_line = reader.read_token_line()?;
+    token_line.expect_min_len(4)?;
 
-    let tag: i32 = parts1[0].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid volume tag: {}", parts1[0]))
-    })?;
-    let parent_dim: i32 = parts1[1].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid parent_dim: {}", parts1[1]))
-    })?;
-    let parent_tag: i32 = parts1[2].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid parent_tag: {}", parts1[2]))
-    })?;
-    let num_partitions: usize = parts1[3].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid numPartitions: {}", parts1[3]))
-    })?;
+    let tag = token_line.tokens[0].parse_int("tag")?;
+    let parent_dim = token_line.tokens[1].parse_entity_dimension("parent_dim")?;
+    let parent_tag = token_line.tokens[2].parse_int("parent_tag")?;
+    let num_partitions = token_line.tokens[3].parse_usize("numPartitions")?;
 
+    token_line.expect_min_len(4 + num_partitions)?;
     let mut partition_tags = Vec::with_capacity(num_partitions);
     for i in 0..num_partitions {
-        if 4 + i >= parts1.len() {
-            return Err(ParseError::InvalidFormat(
-                "Not enough partition tags".to_string(),
-            ));
-        }
-        partition_tags.push(parts1[4 + i].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid partition tag: {}", parts1[4 + i]))
-        })?);
+        partition_tags.push(token_line.tokens[4 + i].parse_int("partitionTag")?);
     }
 
-    // Line 2: minX minY minZ maxX maxY maxZ numPhysicalTags physicalTag ...
-    let line2 = read_line(lines)?;
-    let parts2: Vec<&str> = line2.split_whitespace().collect();
-    if parts2.len() < 7 {
-        return Err(ParseError::InvalidFormat(format!(
-            "Invalid partitioned volume line 2: {}",
-            line2
-        )));
-    }
+    // Continue parsing: minX minY minZ maxX maxY maxZ numPhysicalTags physicalTag ...
+    let bbox_offset = 4 + num_partitions;
+    token_line.expect_min_len(bbox_offset + 7)?;
 
-    let min_x: f64 = parts2[0].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid minX: {}", parts2[0]))
-    })?;
-    let min_y: f64 = parts2[1].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid minY: {}", parts2[1]))
-    })?;
-    let min_z: f64 = parts2[2].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid minZ: {}", parts2[2]))
-    })?;
-    let max_x: f64 = parts2[3].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid maxX: {}", parts2[3]))
-    })?;
-    let max_y: f64 = parts2[4].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid maxY: {}", parts2[4]))
-    })?;
-    let max_z: f64 = parts2[5].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid maxZ: {}", parts2[5]))
-    })?;
-    let num_physical_tags: usize = parts2[6].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid numPhysicalTags: {}", parts2[6]))
-    })?;
+    let min_x = token_line.tokens[bbox_offset].parse_float("minX")?;
+    let min_y = token_line.tokens[bbox_offset + 1].parse_float("minY")?;
+    let min_z = token_line.tokens[bbox_offset + 2].parse_float("minZ")?;
+    let max_x = token_line.tokens[bbox_offset + 3].parse_float("maxX")?;
+    let max_y = token_line.tokens[bbox_offset + 4].parse_float("maxY")?;
+    let max_z = token_line.tokens[bbox_offset + 5].parse_float("maxZ")?;
+    let num_physical_tags = token_line.tokens[bbox_offset + 6].parse_usize("numPhysicalTags")?;
 
+    token_line.expect_min_len(bbox_offset + 7 + num_physical_tags)?;
     let mut physical_tags = Vec::with_capacity(num_physical_tags);
     for i in 0..num_physical_tags {
-        if 7 + i >= parts2.len() {
-            return Err(ParseError::InvalidFormat(
-                "Not enough physical tags".to_string(),
-            ));
-        }
-        physical_tags.push(parts2[7 + i].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid physical tag: {}", parts2[7 + i]))
-        })?);
+        let idx = bbox_offset + 7 + i;
+        physical_tags.push(token_line.tokens[idx].parse_int("physicalTag")?);
     }
 
-    // Line 3: numBoundingSurfaces surfaceTag ...
-    let line3 = read_line(lines)?;
-    let parts3: Vec<&str> = line3.split_whitespace().collect();
-    if parts3.is_empty() {
-        return Err(ParseError::InvalidFormat(
-            "Missing numBoundingSurfaces".to_string(),
-        ));
-    }
+    // Continue parsing: numBoundingSurfaces surfaceTag ...
+    let boundary_offset = bbox_offset + 7 + num_physical_tags;
+    token_line.expect_min_len(boundary_offset)?;
 
-    let num_bounding_surfaces: usize = parts3[0].parse().map_err(|_| {
-        ParseError::InvalidFormat(format!("Invalid numBoundingSurfaces: {}", parts3[0]))
-    })?;
+    let num_bounding_surfaces =
+        token_line.tokens[boundary_offset].parse_usize("numBoundingSurfaces")?;
 
+    token_line.expect_min_len(boundary_offset + 1 + num_bounding_surfaces)?;
     let mut bounding_surfaces = Vec::with_capacity(num_bounding_surfaces);
     for i in 0..num_bounding_surfaces {
-        if 1 + i >= parts3.len() {
-            return Err(ParseError::InvalidFormat(
-                "Not enough bounding surfaces".to_string(),
-            ));
-        }
-        bounding_surfaces.push(parts3[1 + i].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid bounding surface: {}", parts3[1 + i]))
-        })?);
+        let idx = boundary_offset + 1 + i;
+        bounding_surfaces.push(token_line.tokens[idx].parse_int("boundingSurface")?);
     }
 
     Ok(PartitionedVolume {

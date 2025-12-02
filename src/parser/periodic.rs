@@ -1,93 +1,47 @@
 //! Parser for $Periodic section
 
-use std::io::BufReader;
-use std::io::Lines;
-
-use crate::error::{ParseError, Result};
+use crate::error::Result;
 use crate::types::{Mesh, PeriodicLink};
 
-use super::{read_line, expect_end_marker};
+use super::LineReader;
 
-pub fn parse<R: std::io::Read>(
-    lines: &mut Lines<BufReader<R>>,
-    mesh: &mut Mesh,
-) -> Result<()> {
+pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
     // Read number of periodic links
-    let header = read_line(lines)?;
-    let num_periodic_links: usize = header
-        .parse()
-        .map_err(|_| ParseError::InvalidFormat(format!("Invalid numPeriodicLinks: {}", header)))?;
+    let token_line = reader.read_token_line()?;
+    let num_periodic_links = token_line.tokens[0].parse_usize("numPeriodicLinks")?;
 
     for _ in 0..num_periodic_links {
         // Read entity info: entityDim entityTag entityTagMaster
-        let entity_line = read_line(lines)?;
-        let parts: Vec<&str> = entity_line.split_whitespace().collect();
-        if parts.len() < 3 {
-            return Err(ParseError::InvalidFormat(format!(
-                "Invalid periodic entity line: {}",
-                entity_line
-            )));
-        }
+        let token_line = reader.read_token_line()?;
+        token_line.expect_len(3)?;
 
-        let entity_dim: i32 = parts[0].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid entity_dim: {}", parts[0]))
-        })?;
-        let entity_tag: i32 = parts[1].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid entity_tag: {}", parts[1]))
-        })?;
-        let entity_tag_master: i32 = parts[2].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid entity_tag_master: {}", parts[2]))
-        })?;
+        let entity_dim = token_line.tokens[0].parse_entity_dimension("entityDim")?;
+        let entity_tag = token_line.tokens[1].parse_int("entityTag")?;
+        let entity_tag_master = token_line.tokens[2].parse_int("entityTagMaster")?;
 
         // Read affine transform
-        let affine_line = read_line(lines)?;
-        let affine_parts: Vec<&str> = affine_line.split_whitespace().collect();
-        if affine_parts.is_empty() {
-            return Err(ParseError::InvalidFormat(
-                "Missing numAffine value".to_string(),
-            ));
-        }
+        let token_line = reader.read_token_line()?;
 
-        let num_affine: usize = affine_parts[0].parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid numAffine: {}", affine_parts[0]))
-        })?;
+        let num_affine = token_line.tokens[0].parse_usize("numAffine")?;
 
+        token_line.expect_min_len(1 + num_affine)?;
         let mut affine_transform = Vec::with_capacity(num_affine);
-        for i in 1..=num_affine {
-            if i >= affine_parts.len() {
-                return Err(ParseError::InvalidFormat(
-                    "Not enough affine transform values".to_string(),
-                ));
-            }
-            let value: f64 = affine_parts[i].parse().map_err(|_| {
-                ParseError::InvalidFormat(format!("Invalid affine value: {}", affine_parts[i]))
-            })?;
+        for j in 0..num_affine {
+            let value = token_line.tokens[1 + j].parse_float("affineValue")?;
             affine_transform.push(value);
         }
 
         // Read node correspondences
-        let corr_line = read_line(lines)?;
-        let num_corresponding_nodes: usize = corr_line.parse().map_err(|_| {
-            ParseError::InvalidFormat(format!("Invalid numCorrespondingNodes: {}", corr_line))
-        })?;
+        let token_line = reader.read_token_line()?;
+        let num_corresponding_nodes = token_line.tokens[0].parse_usize("numCorrespondingNodes")?;
 
         let mut node_correspondences = Vec::with_capacity(num_corresponding_nodes);
         for _ in 0..num_corresponding_nodes {
-            let node_line = read_line(lines)?;
-            let node_parts: Vec<&str> = node_line.split_whitespace().collect();
-            if node_parts.len() < 2 {
-                return Err(ParseError::InvalidFormat(format!(
-                    "Invalid node correspondence line: {}",
-                    node_line
-                )));
-            }
+            let token_line = reader.read_token_line()?;
+            token_line.expect_len(2)?;
 
-            let node_tag: usize = node_parts[0].parse().map_err(|_| {
-                ParseError::InvalidFormat(format!("Invalid node_tag: {}", node_parts[0]))
-            })?;
-            let node_tag_master: usize = node_parts[1].parse().map_err(|_| {
-                ParseError::InvalidFormat(format!("Invalid node_tag_master: {}", node_parts[1]))
-            })?;
+            let node_tag = token_line.tokens[0].parse_usize("nodeTag")?;
+            let node_tag_master = token_line.tokens[1].parse_usize("nodeTagMaster")?;
 
             node_correspondences.push((node_tag, node_tag_master));
         }
@@ -101,14 +55,17 @@ pub fn parse<R: std::io::Read>(
         });
     }
 
-    expect_end_marker(lines, "Periodic")?;
+    let token_line = reader.read_token_line()?;
+    token_line.expect_end_marker("Periodic")?;
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::super::*;
+    use super::super::*;
     use super::*;
-    use std::io::{BufRead, Cursor};
 
     #[test]
     fn test_parse_periodic() {
@@ -120,16 +77,16 @@ mod tests {
 3 4
 $EndPeriodic
 "#;
-        let cursor = Cursor::new(data);
-        let reader = BufReader::new(cursor);
-        let mut lines = reader.lines();
+
+        let source_file = SourceFile::new(data.into());
+        let mut reader = LineReader::new(source_file);
         let mut mesh = Mesh::default();
 
-        parse(&mut lines, &mut mesh).unwrap();
+        parse(&mut reader, &mut mesh).unwrap();
 
         assert_eq!(mesh.periodic_links.len(), 1);
         let link = &mesh.periodic_links[0];
-        assert_eq!(link.entity_dim, 2);
+        assert_eq!(link.entity_dim, EntityDimension::Surface);
         assert_eq!(link.entity_tag, 1);
         assert_eq!(link.entity_tag_master, 2);
         assert_eq!(link.affine_transform.len(), 0);

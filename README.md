@@ -6,28 +6,31 @@ A Rust library for parsing Gmsh MSH 4.1 format files.
 
 - **MSH 4.1 ASCII format support**: Parse Gmsh mesh files in ASCII format
 - **Entity-based organization**: Preserves the entity-based structure of MSH 4.1
-- **Efficient data access**: Both entity-based iteration and O(1) tag-based lookup
-- **Core section parsing**: Supports MeshFormat, PhysicalNames, Entities, Nodes, and Elements sections
-- **Type-safe element types**: Supports 33 commonly used Gmsh element types (1-31, 92-93)
+- **Comprehensive section support**: All standard MSH 4.1 sections including post-processing data
+- **Type-safe element types**: Complete support for all 140 Gmsh element types
+- **Better error reporting**: Uses miette for detailed, user-friendly error messages
 
 ## Supported Sections
 
 - ✅ `$MeshFormat` - File format version and metadata
 - ✅ `$PhysicalNames` - Physical group names
 - ✅ `$Entities` - Geometric entities (points, curves, surfaces, volumes)
+- ✅ `$PartitionedEntities` - Partitioned entity information
 - ✅ `$Nodes` - Mesh nodes organized by entity blocks
 - ✅ `$Elements` - Mesh elements organized by entity blocks
-- ⏳ `$Periodic` - Periodicity relations (future)
-- ⏳ `$NodeData` - Node-based post-processing data (future)
-- ⏳ `$ElementData` - Element-based post-processing data (future)
-- ⏳ `$ElementNodeData` - Element-node-based post-processing data (future)
+- ✅ `$Periodic` - Periodic boundary conditions
+- ✅ `$GhostElements` - Ghost element information for parallel meshes
+- ✅ `$Parametrizations` - Parametric curve and surface definitions
+- ✅ `$NodeData` - Node-based post-processing data
+- ✅ `$ElementData` - Element-based post-processing data
+- ✅ `$ElementNodeData` - Element-node-based post-processing data
+- ✅ `$InterpolationScheme` - Custom interpolation schemes
 
 ## Not Supported
 
 - Binary MSH files (only ASCII)
 - Legacy MSH formats (1.0, 2.x, 4.0)
 - Writing/generating MSH files
-- Partitioned entities, ghost elements, parametrizations
 
 ## Installation
 
@@ -40,8 +43,29 @@ gmsh-parser = { git = "https://github.com/elgar328/gmsh-parser" }
 
 ## Usage
 
+### Quick Summary
+
+The easiest way to get an overview of a mesh file:
+
 ```rust
 use gmsh_parser::parse_msh_file;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mesh = parse_msh_file("mesh.msh")?;
+
+    // Print a comprehensive summary
+    mesh.print_summary();
+
+    Ok(())
+}
+```
+
+### Detailed Access
+
+For programmatic access to mesh data:
+
+```rust
+use gmsh_parser::{parse_msh_file, NodeBlock, ElementBlock};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse a MSH file
@@ -49,39 +73,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Access format information
     println!("MSH version: {}", mesh.format.version);
+    println!("File type: {}", mesh.format.file_type);
 
     // Access physical names
-    if let Some(name) = mesh.physical_name(3, 1) {
-        println!("Volume 1: {}", name);
+    for pn in &mesh.physical_names {
+        println!("Physical group [dim={}, tag={}]: \"{}\"",
+            pn.dimension as i32, pn.tag, pn.name);
     }
 
-    // Count nodes and elements
-    println!("Total nodes: {}", mesh.num_nodes());
-    println!("Total elements: {}", mesh.num_elements());
-
-    // Direct lookup by tag (O(1))
-    if let Some(node) = mesh.get_node(1) {
-        println!("Node 1: ({}, {}, {})", node.x, node.y, node.z);
+    // Access entities
+    if let Some(entities) = &mesh.entities {
+        println!("Points: {}", entities.points.len());
+        println!("Curves: {}", entities.curves.len());
+        println!("Surfaces: {}", entities.surfaces.len());
+        println!("Volumes: {}", entities.volumes.len());
     }
 
-    // Iterate over all nodes
-    for node in mesh.nodes_iter() {
-        println!("Node {}: ({}, {}, {})", node.tag, node.x, node.y, node.z);
+    // Iterate over node blocks
+    for block in &mesh.node_blocks {
+        let node_count = match block {
+            NodeBlock::Point { nodes, .. } => nodes.len(),
+            NodeBlock::Curve { nodes, .. } => nodes.len(),
+            NodeBlock::Surface { nodes, .. } => nodes.len(),
+            NodeBlock::Volume { nodes, .. } => nodes.len(),
+            _ => 0,
+        };
+        println!("Node block: {} nodes", node_count);
     }
 
-    // Entity-based queries
+    // Iterate over element blocks
     for block in &mesh.element_blocks {
-        println!("Entity {}-{}: {} elements of type {:?}",
-            block.entity_dim,
-            block.entity_tag,
-            block.elements.len(),
-            block.element_type
-        );
+        use ElementBlock::*;
+        let elem_count = match block {
+            Triangle3 { elements, .. } => elements.len(),
+            Tetrahedron4 { elements, .. } => elements.len(),
+            _ => 0,
+        };
+        println!("Element block: {} elements", elem_count);
     }
 
-    // Get all elements in a specific entity
-    let elements = mesh.elements_in_entity(3, 1);
-    println!("Elements in volume 1: {}", elements.len());
+    // Check for warnings
+    if !mesh.warnings.is_empty() {
+        println!("\nWarnings:");
+        for warning in &mesh.warnings {
+            println!("  - {}", warning.message);
+        }
+    }
 
     Ok(())
 }
@@ -89,7 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Data Structure
 
-The parser provides a hybrid structure:
+The parser provides entity-based organization:
 
 ### Entity-based blocks
 - Preserves file structure and entity relationships
@@ -99,32 +136,31 @@ The parser provides a hybrid structure:
 ```rust
 // Iterate by entity blocks
 for block in &mesh.node_blocks {
-    println!("Entity {}-{}: {} nodes",
-        block.entity_dim, block.entity_tag, block.nodes.len());
+    match block {
+        NodeBlock::Volume { entity_tag, nodes } => {
+            println!("Volume entity {}: {} nodes", entity_tag, nodes.len());
+        }
+        _ => {}
+    }
 }
-```
-
-### Flat lookup maps
-- O(1) access to nodes and elements by tag
-- Convenient for direct queries
-
-```rust
-// Direct lookup
-let node = mesh.get_node(42)?;
-let element = mesh.get_element(100)?;
 ```
 
 ## Element Types
 
-Supports 33 commonly used Gmsh element types (1-31, 92-93):
+Complete support for all 140 Gmsh element types (1-140):
 
 - **Linear**: Point, Line2, Triangle3, Quadrangle4, Tetrahedron4, Hexahedron8, Prism6, Pyramid5
 - **Second order**: Line3, Triangle6, Quadrangle8/9, Tetrahedron10, Hexahedron20/27, Prism15/18, Pyramid13/14
-- **Higher order**:
-  - Lines: Line4, Line5, Line6
-  - Triangles: Triangle9, Triangle10, Triangle12, Triangle15a, Triangle15b, Triangle21
-  - Tetrahedra: Tetrahedron20, Tetrahedron35, Tetrahedron56
-  - Hexahedra: Hexahedron64, Hexahedron125
+- **Higher order** (up to 10th order):
+  - Lines: Line4 through Line11
+  - Triangles: Triangle9 through Triangle66
+  - Quadrangles: Quadrangle12 through Quadrangle121
+  - Tetrahedra: Tetrahedron16 through Tetrahedron286
+  - Hexahedra: Hexahedron32 through Hexahedron1000
+  - Prisms: Prism24 through Prism550
+  - Pyramids: Pyramid21 through Pyramid385
+- **Variable size**: Polygon, Polyhedron, LineB, TriangleB, PolygonB, LineC
+- **Special**: 1-node elements, Sub elements, Mini elements
 
 ## Examples
 
@@ -134,12 +170,13 @@ Run the included example:
 cargo run --example parse_box
 ```
 
-This will parse the `tests/data/box.msh` file and display:
-- Format information
-- Physical groups
-- Entity counts
+This will parse the `tests/data/custom/box.msh` file and display a comprehensive summary including:
+- Format information (version, file type, data size)
+- Physical groups with their names
+- Entity counts (points, curves, surfaces, volumes)
 - Node and element statistics
-- Element type distribution
+- Optional sections (periodic links, ghost elements, post-processing data)
+- Any warnings encountered during parsing
 
 ## Testing
 

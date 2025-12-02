@@ -1,18 +1,12 @@
 //! Parser for post-processing sections: $NodeData, $ElementData, $ElementNodeData
 
-use std::io::BufReader;
-use std::io::Lines;
+use crate::error::Result;
+use crate::types::{ElementData, ElementNodeData, Mesh, NodeData};
 
-use crate::error::{ParseError, Result};
-use crate::types::{Mesh, NodeData, ElementData, ElementNodeData};
-
-use super::{read_line, expect_end_marker};
+use super::LineReader;
 
 /// Parse $NodeData section
-pub fn parse_node_data<R: std::io::Read>(
-    lines: &mut Lines<BufReader<R>>,
-    mesh: &mut Mesh,
-) -> Result<()> {
+pub fn parse_node_data(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
     let mut node_data = NodeData {
         string_tags: Vec::new(),
         real_tags: Vec::new(),
@@ -21,38 +15,32 @@ pub fn parse_node_data<R: std::io::Read>(
     };
 
     // Read string tags
-    let num_string_tags: usize = read_line(lines)?
-        .parse()
-        .map_err(|_| ParseError::InvalidFormat("Invalid numStringTags".to_string()))?;
+    let token_line = reader.read_token_line()?;
+    let num_string_tags = token_line.tokens[0].parse_usize("numStringTags")?;
 
     for _ in 0..num_string_tags {
-        let tag = read_line(lines)?;
-        // Remove quotes if present
-        let tag = tag.trim_matches('"').to_string();
+        let token_line = reader.read_token_line()?;
+        let tag = token_line.tokens[0].parse_quoted_string_to_line_end()?;
         node_data.string_tags.push(tag);
     }
 
     // Read real tags
-    let num_real_tags: usize = read_line(lines)?
-        .parse()
-        .map_err(|_| ParseError::InvalidFormat("Invalid numRealTags".to_string()))?;
+    let token_line = reader.read_token_line()?;
+    let num_real_tags = token_line.tokens[0].parse_usize("numRealTags")?;
 
     for _ in 0..num_real_tags {
-        let tag: f64 = read_line(lines)?
-            .parse()
-            .map_err(|_| ParseError::InvalidFormat("Invalid real tag".to_string()))?;
+        let token_line = reader.read_token_line()?;
+        let tag = token_line.tokens[0].parse_float("realTag")?;
         node_data.real_tags.push(tag);
     }
 
     // Read integer tags
-    let num_integer_tags: usize = read_line(lines)?
-        .parse()
-        .map_err(|_| ParseError::InvalidFormat("Invalid numIntegerTags".to_string()))?;
+    let token_line = reader.read_token_line()?;
+    let num_integer_tags = token_line.tokens[0].parse_usize("numIntegerTags")?;
 
     for _ in 0..num_integer_tags {
-        let tag: i32 = read_line(lines)?
-            .parse()
-            .map_err(|_| ParseError::InvalidFormat("Invalid integer tag".to_string()))?;
+        let token_line = reader.read_token_line()?;
+        let tag = token_line.tokens[0].parse_int("integerTag")?;
         node_data.integer_tags.push(tag);
     }
 
@@ -70,24 +58,18 @@ pub fn parse_node_data<R: std::io::Read>(
 
     // Read data
     for _ in 0..num_entities {
-        let data_line = read_line(lines)?;
-        let parts: Vec<&str> = data_line.split_whitespace().collect();
-        if parts.is_empty() {
+        let token_line = reader.read_token_line()?;
+
+        if token_line.tokens.is_empty() {
             continue;
         }
 
-        let node_tag: usize = parts[0]
-            .parse()
-            .map_err(|_| ParseError::InvalidFormat("Invalid node tag".to_string()))?;
+        let node_tag = token_line.tokens[0].parse_usize("nodeTag")?;
 
+        token_line.expect_min_len(1 + num_components)?;
         let mut values = Vec::with_capacity(num_components);
         for i in 0..num_components {
-            if 1 + i >= parts.len() {
-                return Err(ParseError::InvalidFormat("Not enough values".to_string()));
-            }
-            let value: f64 = parts[1 + i]
-                .parse()
-                .map_err(|_| ParseError::InvalidFormat("Invalid value".to_string()))?;
+            let value = token_line.tokens[1 + i].parse_float(&format!("value[{}]", i))?;
             values.push(value);
         }
 
@@ -95,15 +77,14 @@ pub fn parse_node_data<R: std::io::Read>(
     }
 
     mesh.node_data.push(node_data);
-    expect_end_marker(lines, "NodeData")?;
+
+    let token_line = reader.read_token_line()?;
+    token_line.expect_end_marker("NodeData")?;
     Ok(())
 }
 
 /// Parse $ElementData section
-pub fn parse_element_data<R: std::io::Read>(
-    lines: &mut Lines<BufReader<R>>,
-    mesh: &mut Mesh,
-) -> Result<()> {
+pub fn parse_element_data(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
     let mut element_data = ElementData {
         string_tags: Vec::new(),
         real_tags: Vec::new(),
@@ -112,37 +93,32 @@ pub fn parse_element_data<R: std::io::Read>(
     };
 
     // Read string tags
-    let num_string_tags: usize = read_line(lines)?
-        .parse()
-        .map_err(|_| ParseError::InvalidFormat("Invalid numStringTags".to_string()))?;
+    let token_line = reader.read_token_line()?;
+    let num_string_tags = token_line.tokens[0].parse_usize("numStringTags")?;
 
     for _ in 0..num_string_tags {
-        let tag = read_line(lines)?;
-        let tag = tag.trim_matches('"').to_string();
+        let token_line = reader.read_token_line()?;
+        let tag = token_line.tokens[0].parse_quoted_string_to_line_end()?;
         element_data.string_tags.push(tag);
     }
 
     // Read real tags
-    let num_real_tags: usize = read_line(lines)?
-        .parse()
-        .map_err(|_| ParseError::InvalidFormat("Invalid numRealTags".to_string()))?;
+    let token_line = reader.read_token_line()?;
+    let num_real_tags = token_line.tokens[0].parse_usize("numRealTags")?;
 
     for _ in 0..num_real_tags {
-        let tag: f64 = read_line(lines)?
-            .parse()
-            .map_err(|_| ParseError::InvalidFormat("Invalid real tag".to_string()))?;
+        let token_line = reader.read_token_line()?;
+        let tag = token_line.tokens[0].parse_float("realTag")?;
         element_data.real_tags.push(tag);
     }
 
     // Read integer tags
-    let num_integer_tags: usize = read_line(lines)?
-        .parse()
-        .map_err(|_| ParseError::InvalidFormat("Invalid numIntegerTags".to_string()))?;
+    let token_line = reader.read_token_line()?;
+    let num_integer_tags = token_line.tokens[0].parse_usize("numIntegerTags")?;
 
     for _ in 0..num_integer_tags {
-        let tag: i32 = read_line(lines)?
-            .parse()
-            .map_err(|_| ParseError::InvalidFormat("Invalid integer tag".to_string()))?;
+        let token_line = reader.read_token_line()?;
+        let tag = token_line.tokens[0].parse_int("integerTag")?;
         element_data.integer_tags.push(tag);
     }
 
@@ -160,24 +136,18 @@ pub fn parse_element_data<R: std::io::Read>(
 
     // Read data
     for _ in 0..num_entities {
-        let data_line = read_line(lines)?;
-        let parts: Vec<&str> = data_line.split_whitespace().collect();
-        if parts.is_empty() {
+        let token_line = reader.read_token_line()?;
+
+        if token_line.tokens.is_empty() {
             continue;
         }
 
-        let element_tag: usize = parts[0]
-            .parse()
-            .map_err(|_| ParseError::InvalidFormat("Invalid element tag".to_string()))?;
+        let element_tag = token_line.tokens[0].parse_usize("elementTag")?;
 
+        token_line.expect_min_len(1 + num_components)?;
         let mut values = Vec::with_capacity(num_components);
         for i in 0..num_components {
-            if 1 + i >= parts.len() {
-                return Err(ParseError::InvalidFormat("Not enough values".to_string()));
-            }
-            let value: f64 = parts[1 + i]
-                .parse()
-                .map_err(|_| ParseError::InvalidFormat("Invalid value".to_string()))?;
+            let value = token_line.tokens[1 + i].parse_float(&format!("value[{}]", i))?;
             values.push(value);
         }
 
@@ -185,15 +155,14 @@ pub fn parse_element_data<R: std::io::Read>(
     }
 
     mesh.element_data.push(element_data);
-    expect_end_marker(lines, "ElementData")?;
+
+    let token_line = reader.read_token_line()?;
+    token_line.expect_end_marker("ElementData")?;
     Ok(())
 }
 
 /// Parse $ElementNodeData section
-pub fn parse_element_node_data<R: std::io::Read>(
-    lines: &mut Lines<BufReader<R>>,
-    mesh: &mut Mesh,
-) -> Result<()> {
+pub fn parse_element_node_data(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
     let mut element_node_data = ElementNodeData {
         string_tags: Vec::new(),
         real_tags: Vec::new(),
@@ -202,37 +171,32 @@ pub fn parse_element_node_data<R: std::io::Read>(
     };
 
     // Read string tags
-    let num_string_tags: usize = read_line(lines)?
-        .parse()
-        .map_err(|_| ParseError::InvalidFormat("Invalid numStringTags".to_string()))?;
+    let token_line = reader.read_token_line()?;
+    let num_string_tags = token_line.tokens[0].parse_usize("numStringTags")?;
 
     for _ in 0..num_string_tags {
-        let tag = read_line(lines)?;
-        let tag = tag.trim_matches('"').to_string();
+        let token_line = reader.read_token_line()?;
+        let tag = token_line.tokens[0].parse_quoted_string_to_line_end()?;
         element_node_data.string_tags.push(tag);
     }
 
     // Read real tags
-    let num_real_tags: usize = read_line(lines)?
-        .parse()
-        .map_err(|_| ParseError::InvalidFormat("Invalid numRealTags".to_string()))?;
+    let token_line = reader.read_token_line()?;
+    let num_real_tags = token_line.tokens[0].parse_usize("numRealTags")?;
 
     for _ in 0..num_real_tags {
-        let tag: f64 = read_line(lines)?
-            .parse()
-            .map_err(|_| ParseError::InvalidFormat("Invalid real tag".to_string()))?;
+        let token_line = reader.read_token_line()?;
+        let tag = token_line.tokens[0].parse_float("realTag")?;
         element_node_data.real_tags.push(tag);
     }
 
     // Read integer tags
-    let num_integer_tags: usize = read_line(lines)?
-        .parse()
-        .map_err(|_| ParseError::InvalidFormat("Invalid numIntegerTags".to_string()))?;
+    let token_line = reader.read_token_line()?;
+    let num_integer_tags = token_line.tokens[0].parse_usize("numIntegerTags")?;
 
     for _ in 0..num_integer_tags {
-        let tag: i32 = read_line(lines)?
-            .parse()
-            .map_err(|_| ParseError::InvalidFormat("Invalid integer tag".to_string()))?;
+        let token_line = reader.read_token_line()?;
+        let tag = token_line.tokens[0].parse_int("integerTag")?;
         element_node_data.integer_tags.push(tag);
     }
 
@@ -250,28 +214,19 @@ pub fn parse_element_node_data<R: std::io::Read>(
 
     // Read data
     for _ in 0..num_entities {
-        let data_line = read_line(lines)?;
-        let parts: Vec<&str> = data_line.split_whitespace().collect();
-        if parts.len() < 2 {
-            continue;
-        }
+        let token_line = reader.read_token_line()?;
 
-        let element_tag: usize = parts[0]
-            .parse()
-            .map_err(|_| ParseError::InvalidFormat("Invalid element tag".to_string()))?;
-        let num_nodes_per_element: usize = parts[1]
-            .parse()
-            .map_err(|_| ParseError::InvalidFormat("Invalid numNodesPerElement".to_string()))?;
+        token_line.expect_min_len(2)?;
+
+        let element_tag = token_line.tokens[0].parse_usize("elementTag")?;
+        let num_nodes_per_element = token_line.tokens[1].parse_usize("numNodesPerElement")?;
 
         let total_values = num_components * num_nodes_per_element;
+        token_line.expect_min_len(2 + total_values)?;
+
         let mut values = Vec::with_capacity(total_values);
         for i in 0..total_values {
-            if 2 + i >= parts.len() {
-                return Err(ParseError::InvalidFormat("Not enough values".to_string()));
-            }
-            let value: f64 = parts[2 + i]
-                .parse()
-                .map_err(|_| ParseError::InvalidFormat("Invalid value".to_string()))?;
+            let value = token_line.tokens[2 + i].parse_float(&format!("value[{}]", i))?;
             values.push(value);
         }
 
@@ -281,6 +236,8 @@ pub fn parse_element_node_data<R: std::io::Read>(
     }
 
     mesh.element_node_data.push(element_node_data);
-    expect_end_marker(lines, "ElementNodeData")?;
+
+    let token_line = reader.read_token_line()?;
+    token_line.expect_end_marker("ElementNodeData")?;
     Ok(())
 }

@@ -2,11 +2,13 @@
 //!
 //! Defines periodicity relations between entities and their corresponding nodes.
 
+use crate::types::EntityDimension;
+
 /// Periodic link between two entities
 #[derive(Debug, Clone)]
 pub struct PeriodicLink {
-    /// Dimension of the entity (0, 1, 2, or 3)
-    pub entity_dim: i32,
+    /// Dimension of the entity
+    pub entity_dim: EntityDimension,
     /// Tag of the slave entity
     pub entity_tag: i32,
     /// Tag of the master entity

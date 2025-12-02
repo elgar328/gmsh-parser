@@ -189,13 +189,17 @@ The format is defined as follows:
        ...
      $EndGhostElements
 
+     // NOTE: Official Gmsh doc ($Parametrizations) is misleading on newlines.
+     // Actual MSH format requires '\n' after 'curveTag(int)' and 'surfaceTag(int)'.
+     // This document has been updated with '\n' to reflect the correct format.
+
      $Parametrizations
        numCurveParam(size_t) numSurfaceParam(size_t)
-       curveTag(int) numNodes(size_t)
+       curveTag(int) \n numNodes(size_t)
          nodeX(double) nodeY(double) nodeZ(double) nodeU(double)
          ...
        ...
-       surfaceTag(int) numNodes(size_t) numTriangles(size_t)
+       surfaceTag(int) \n numNodes(size_t) numTriangles(size_t)
          nodeX(double) nodeY(double) nodeZ(double)
            nodeU(double) nodeV(double)
            curvMaxX(double) curvMaxY(double) curvMaxZ(double)
