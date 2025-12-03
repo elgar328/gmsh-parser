@@ -5,13 +5,20 @@ use crate::types::{ElementBlock, ElementType, Mesh};
 
 pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
     let token_line = reader.read_token_line()?;
+    let mut iter = token_line.iter();
 
-    token_line.expect_len(4)?;
+    let num_entity_blocks = iter.parse_usize("numEntityBlocks")?;
+    let _num_elements = iter.parse_usize("numElements")?;
+    let _min_element_tag = iter.parse_usize("minElementTag")?;
+    let _max_element_tag = iter.parse_usize("maxElementTag")?;
+    iter.expect_no_more()?;
 
-    let num_entity_blocks = token_line.tokens[0].parse_usize("numEntityBlocks")?;
-    let _num_elements = token_line.tokens[1].parse_usize("numElements")?;
-    let _min_element_tag = token_line.tokens[2].parse_usize("minElementTag")?;
-    let _max_element_tag = token_line.tokens[3].parse_usize("maxElementTag")?;
+    // TODO: Validate parsed elements against metadata
+    // After parsing all blocks, verify:
+    // - total element count == _num_elements
+    // - min element tag == _min_element_tag
+    // - max element tag == _max_element_tag
+    // This requires refactoring ElementBlock to have unified element access methods
 
     // Parse each entity block
     for _ in 0..num_entity_blocks {
@@ -28,12 +35,12 @@ pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
 fn parse_element_block(reader: &mut LineReader) -> Result<ElementBlock> {
     let token_line = reader.read_token_line()?;
 
-    token_line.expect_len(4)?;
-
-    let entity_dim = token_line.tokens[0].parse_int("entityDim")?;
-    let entity_tag = token_line.tokens[1].parse_int("entityTag")?;
-    let element_type = token_line.tokens[2].parse_element_type("elementType")?;
-    let num_elements_in_block = token_line.tokens[3].parse_usize("numElementsInBlock")?;
+    let mut iter = token_line.iter();
+    let entity_dim = iter.parse_int("entityDim")?;
+    let entity_tag = iter.parse_int("entityTag")?;
+    let element_type = iter.parse_element_type("elementType")?;
+    let num_elements_in_block = iter.parse_usize("numElementsInBlock")?;
+    iter.expect_no_more()?;
 
     // Parse elements based on type
     match element_type {
@@ -1689,17 +1696,19 @@ fn parse_fixed_element_block<const N: usize, E>(
     for _ in 0..num_elements {
         let token_line = reader.read_token_line()?;
 
-        token_line.expect_len(N + 1)?;
+        let mut iter = token_line.iter();
+        let tag = iter.parse_usize("elementTag")?;
 
-        let tag = token_line.tokens[0].parse_usize("elementTag")?;
+        // Parse exactly N nodes
+        let mut nodes = Vec::with_capacity(N);
+        for _ in 0..N {
+            nodes.push(iter.parse_usize("nodeTag")?);
+        }
 
-        let nodes: Vec<usize> = token_line.tokens[1..1 + N]
-            .iter()
-            .map(|t| t.parse_usize("nodeTag"))
-            .collect::<Result<Vec<_>>>()?;
+        // Verify no extra data
+        iter.expect_no_more()?;
 
         let nodes_array: [usize; N] = nodes.try_into().unwrap();
-
         elements.push(create_element(tag, nodes_array));
     }
 
@@ -1720,12 +1729,13 @@ fn parse_variable_element_block<E>(
     for _ in 0..num_elements {
         let token_line = reader.read_token_line()?;
 
-        let tag = token_line.tokens[0].parse_usize("elementTag")?;
+        let mut iter = token_line.iter();
+        let tag = iter.parse_usize("elementTag")?;
 
-        let nodes: Vec<usize> = token_line.tokens[1..]
-            .iter()
-            .map(|t| t.parse_usize("nodeTag"))
-            .collect::<Result<Vec<_>>>()?;
+        let mut nodes = Vec::new();
+        while iter.has_next() {
+            nodes.push(iter.parse_usize("nodeTag")?);
+        }
 
         elements.push(create_element(tag, nodes));
     }
@@ -1745,11 +1755,12 @@ fn parse_point_element_block(
 
     for _ in 0..num_elements {
         let token_line = reader.read_token_line()?;
+        let mut iter = token_line.iter();
 
-        token_line.expect_len(2)?;
+        let tag = iter.parse_usize("elementTag")?;
+        let node = iter.parse_usize("node")?;
+        iter.expect_no_more()?;
 
-        let tag = token_line.tokens[0].parse_usize("elementTag")?;
-        let node = token_line.tokens[1].parse_usize("node")?;
         elements.push(PointElement { tag, node });
     }
 
@@ -1776,7 +1787,7 @@ $EndElements
 
         let source_file = SourceFile::new(data.into());
         let mut reader = LineReader::new(source_file);
-        let mut mesh = Mesh::default();
+        let mut mesh = Mesh::dummy();
 
         let result = parse(&mut reader, &mut mesh);
         assert!(result.is_ok());

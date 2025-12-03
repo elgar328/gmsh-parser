@@ -4,18 +4,22 @@ use crate::types::{CurveEntity, Entities, Mesh, PointEntity, SurfaceEntity, Volu
 
 pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
     let token_line = reader.read_token_line()?;
+    let mut iter = token_line.iter();
 
-    token_line.expect_len(4)?;
+    let num_points = iter.parse_usize("numPoints")?;
+    let num_curves = iter.parse_usize("numCurves")?;
+    let num_surfaces = iter.parse_usize("numSurfaces")?;
+    let num_volumes = iter.parse_usize("numVolumes")?;
 
-    let num_points = token_line.tokens[0].parse_usize("numPoints")?;
-    let num_curves = token_line.tokens[1].parse_usize("numCurves")?;
-    let num_surfaces = token_line.tokens[2].parse_usize("numSurfaces")?;
-    let num_volumes = token_line.tokens[3].parse_usize("numVolumes")?;
+    iter.expect_no_more()?;
 
-    // Initialize entities if not already present
-    if mesh.entities.is_none() {
-        mesh.entities = Some(Entities::new());
+    // Entities section should only appear once
+    if mesh.entities.is_some() {
+        return Err(token_line.invalid_format(
+            "Duplicate $Entities section found - this section should only appear once",
+        ));
     }
+    mesh.entities = Some(Entities::new());
     let entities = mesh.entities.as_mut().unwrap();
 
     // Parse points
@@ -50,21 +54,17 @@ pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
 
 fn parse_point_entity(reader: &mut LineReader) -> Result<PointEntity> {
     let token_line = reader.read_token_line()?;
+    let mut iter = token_line.iter();
 
-    token_line.expect_min_len(5)?;
+    let tag = iter.parse_int("tag")?;
+    let x = iter.parse_float("x")?;
+    let y = iter.parse_float("y")?;
+    let z = iter.parse_float("z")?;
 
-    let tag = token_line.tokens[0].parse_int("tag")?;
-    let x = token_line.tokens[1].parse_float("x")?;
-    let y = token_line.tokens[2].parse_float("y")?;
-    let z = token_line.tokens[3].parse_float("z")?;
-    let num_physical_tags = token_line.tokens[4].parse_usize("numPhysicalTags")?;
+    let num_physical_tags = iter.parse_usize("numPhysicalTags")?;
+    let physical_tags = iter.parse_ints(num_physical_tags, "physicalTag")?;
 
-    token_line.expect_min_len(5 + num_physical_tags)?;
-
-    let physical_tags: Vec<i32> = token_line.tokens[5..5 + num_physical_tags]
-        .iter()
-        .map(|t| t.parse_int("physicalTag"))
-        .collect::<Result<Vec<i32>>>()?;
+    iter.expect_no_more()?;
 
     Ok(PointEntity {
         tag,
@@ -77,39 +77,23 @@ fn parse_point_entity(reader: &mut LineReader) -> Result<PointEntity> {
 
 fn parse_curve_entity(reader: &mut LineReader) -> Result<CurveEntity> {
     let token_line = reader.read_token_line()?;
+    let mut iter = token_line.iter();
 
-    token_line.expect_min_len(8)?;
+    let tag = iter.parse_int("tag")?;
+    let min_x = iter.parse_float("minX")?;
+    let min_y = iter.parse_float("minY")?;
+    let min_z = iter.parse_float("minZ")?;
+    let max_x = iter.parse_float("maxX")?;
+    let max_y = iter.parse_float("maxY")?;
+    let max_z = iter.parse_float("maxZ")?;
 
-    let tag = token_line.tokens[0].parse_int("tag")?;
-    let min_x = token_line.tokens[1].parse_float("minX")?;
-    let min_y = token_line.tokens[2].parse_float("minY")?;
-    let min_z = token_line.tokens[3].parse_float("minZ")?;
-    let max_x = token_line.tokens[4].parse_float("maxX")?;
-    let max_y = token_line.tokens[5].parse_float("maxY")?;
-    let max_z = token_line.tokens[6].parse_float("maxZ")?;
-    let num_physical_tags = token_line.tokens[7].parse_usize("numPhysicalTags")?;
+    let num_physical_tags = iter.parse_usize("numPhysicalTags")?;
+    let physical_tags: Vec<i32> = iter.parse_ints(num_physical_tags, "physicalTag")?;
 
-    let physical_tags_idx = 8;
-    token_line.expect_min_len(physical_tags_idx + num_physical_tags + 1)?;
+    let num_bounding_points = iter.parse_usize("numBoundingPoints")?;
+    let bounding_points: Vec<i32> = iter.parse_ints(num_bounding_points, "boundingPoint")?;
 
-    let physical_tags: Vec<i32> = token_line.tokens
-        [physical_tags_idx..physical_tags_idx + num_physical_tags]
-        .iter()
-        .map(|t| t.parse_int("physicalTag"))
-        .collect::<Result<Vec<i32>>>()?;
-
-    let num_bounding_points_idx = physical_tags_idx + num_physical_tags;
-    let num_bounding_points =
-        token_line.tokens[num_bounding_points_idx].parse_usize("numBoundingPoints")?;
-
-    let bounding_points_idx = num_bounding_points_idx + 1;
-    token_line.expect_min_len(bounding_points_idx + num_bounding_points)?;
-
-    let bounding_points: Vec<i32> = token_line.tokens
-        [bounding_points_idx..bounding_points_idx + num_bounding_points]
-        .iter()
-        .map(|t| t.parse_int("boundingPoint"))
-        .collect::<Result<Vec<i32>>>()?;
+    iter.expect_no_more()?;
 
     Ok(CurveEntity {
         tag,
@@ -126,39 +110,23 @@ fn parse_curve_entity(reader: &mut LineReader) -> Result<CurveEntity> {
 
 fn parse_surface_entity(reader: &mut LineReader) -> Result<SurfaceEntity> {
     let token_line = reader.read_token_line()?;
+    let mut iter = token_line.iter();
 
-    token_line.expect_min_len(8)?;
+    let tag = iter.parse_int("tag")?;
+    let min_x = iter.parse_float("minX")?;
+    let min_y = iter.parse_float("minY")?;
+    let min_z = iter.parse_float("minZ")?;
+    let max_x = iter.parse_float("maxX")?;
+    let max_y = iter.parse_float("maxY")?;
+    let max_z = iter.parse_float("maxZ")?;
 
-    let tag = token_line.tokens[0].parse_int("tag")?;
-    let min_x = token_line.tokens[1].parse_float("minX")?;
-    let min_y = token_line.tokens[2].parse_float("minY")?;
-    let min_z = token_line.tokens[3].parse_float("minZ")?;
-    let max_x = token_line.tokens[4].parse_float("maxX")?;
-    let max_y = token_line.tokens[5].parse_float("maxY")?;
-    let max_z = token_line.tokens[6].parse_float("maxZ")?;
-    let num_physical_tags = token_line.tokens[7].parse_usize("numPhysicalTags")?;
+    let num_physical_tags = iter.parse_usize("numPhysicalTags")?;
+    let physical_tags: Vec<i32> = iter.parse_ints(num_physical_tags, "physicalTag")?;
 
-    let physical_tags_idx = 8;
-    token_line.expect_min_len(physical_tags_idx + num_physical_tags + 1)?;
+    let num_bounding_curves = iter.parse_usize("numBoundingCurves")?;
+    let bounding_curves: Vec<i32> = iter.parse_ints(num_bounding_curves, "boundingCurve")?;
 
-    let physical_tags: Vec<i32> = token_line.tokens
-        [physical_tags_idx..physical_tags_idx + num_physical_tags]
-        .iter()
-        .map(|t| t.parse_int("physicalTag"))
-        .collect::<Result<Vec<i32>>>()?;
-
-    let num_bounding_curves_idx = physical_tags_idx + num_physical_tags;
-    let num_bounding_curves =
-        token_line.tokens[num_bounding_curves_idx].parse_usize("numBoundingCurves")?;
-
-    let bounding_curves_idx = num_bounding_curves_idx + 1;
-    token_line.expect_min_len(bounding_curves_idx + num_bounding_curves)?;
-
-    let bounding_curves: Vec<i32> = token_line.tokens
-        [bounding_curves_idx..bounding_curves_idx + num_bounding_curves]
-        .iter()
-        .map(|t| t.parse_int("boundingCurve"))
-        .collect::<Result<Vec<i32>>>()?;
+    iter.expect_no_more()?;
 
     Ok(SurfaceEntity {
         tag,
@@ -175,39 +143,23 @@ fn parse_surface_entity(reader: &mut LineReader) -> Result<SurfaceEntity> {
 
 fn parse_volume_entity(reader: &mut LineReader) -> Result<VolumeEntity> {
     let token_line = reader.read_token_line()?;
+    let mut iter = token_line.iter();
 
-    token_line.expect_min_len(8)?;
+    let tag = iter.parse_int("tag")?;
+    let min_x = iter.parse_float("minX")?;
+    let min_y = iter.parse_float("minY")?;
+    let min_z = iter.parse_float("minZ")?;
+    let max_x = iter.parse_float("maxX")?;
+    let max_y = iter.parse_float("maxY")?;
+    let max_z = iter.parse_float("maxZ")?;
 
-    let tag = token_line.tokens[0].parse_int("tag")?;
-    let min_x = token_line.tokens[1].parse_float("minX")?;
-    let min_y = token_line.tokens[2].parse_float("minY")?;
-    let min_z = token_line.tokens[3].parse_float("minZ")?;
-    let max_x = token_line.tokens[4].parse_float("maxX")?;
-    let max_y = token_line.tokens[5].parse_float("maxY")?;
-    let max_z = token_line.tokens[6].parse_float("maxZ")?;
-    let num_physical_tags = token_line.tokens[7].parse_usize("numPhysicalTags")?;
+    let num_physical_tags = iter.parse_usize("numPhysicalTags")?;
+    let physical_tags: Vec<i32> = iter.parse_ints(num_physical_tags, "physicalTag")?;
 
-    let physical_tags_idx = 8;
-    token_line.expect_min_len(physical_tags_idx + num_physical_tags + 1)?;
+    let num_bounding_surfaces = iter.parse_usize("numBoundingSurfaces")?;
+    let bounding_surfaces: Vec<i32> = iter.parse_ints(num_bounding_surfaces, "boundingSurface")?;
 
-    let physical_tags: Vec<i32> = token_line.tokens
-        [physical_tags_idx..physical_tags_idx + num_physical_tags]
-        .iter()
-        .map(|t| t.parse_int("physicalTag"))
-        .collect::<Result<Vec<i32>>>()?;
-
-    let num_bounding_surfaces_idx = physical_tags_idx + num_physical_tags;
-    let num_bounding_surfaces =
-        token_line.tokens[num_bounding_surfaces_idx].parse_usize("numBoundingSurfaces")?;
-
-    let bounding_surfaces_idx = num_bounding_surfaces_idx + 1;
-    token_line.expect_min_len(bounding_surfaces_idx + num_bounding_surfaces)?;
-
-    let bounding_surfaces: Vec<i32> = token_line.tokens
-        [bounding_surfaces_idx..bounding_surfaces_idx + num_bounding_surfaces]
-        .iter()
-        .map(|t| t.parse_int("boundingSurface"))
-        .collect::<Result<Vec<i32>>>()?;
+    iter.expect_no_more()?;
 
     Ok(VolumeEntity {
         tag,
@@ -236,7 +188,7 @@ $EndEntities
 
         let source_file = SourceFile::new(data.into());
         let mut reader = LineReader::new(source_file);
-        let mut mesh = Mesh::default();
+        let mut mesh = Mesh::dummy();
 
         let result = parse(&mut reader, &mut mesh);
         assert!(result.is_ok());

@@ -38,20 +38,27 @@ pub fn parse_msh(content: impl AsRef<str>) -> Result<Mesh> {
 
 /// Internal parsing function that works with a LineReader
 fn parse_msh_internal(line_reader: &mut LineReader) -> Result<Mesh> {
-    let mut mesh = Mesh::default();
-    let mut mesh_format_parsed = false;
+    // Parse $MeshFormat section first (required)
+    let format = mesh_format::parse(line_reader)?;
+    let mut mesh = Mesh::new(format);
 
-    while let Some(line) = line_reader.next_line() {
-        let trimmed = line.trim();
+    // Parse remaining sections
+    loop {
+        let token_line = match line_reader.read_token_line() {
+            Ok(line) => line,
+            Err(ParseError::UnexpectedEof) => break,
+            Err(e) => return Err(e),
+        };
 
-        if trimmed.is_empty() {
-            continue;
-        }
+        let first_token = token_line.iter().peek_token()?;
 
-        match trimmed {
+        match first_token.value.as_str() {
             "$MeshFormat" => {
-                mesh_format::parse(line_reader, &mut mesh)?;
-                mesh_format_parsed = true;
+                return Err(ParseError::InvalidData {
+                    message: "$MeshFormat section appears more than once".to_string(),
+                    span: first_token.span.to_source_span(),
+                    msh_content: first_token.source.clone(),
+                });
             }
             "$PhysicalNames" => {
                 physical_names::parse(line_reader, &mut mesh)?;
@@ -89,25 +96,21 @@ fn parse_msh_internal(line_reader: &mut LineReader) -> Result<Mesh> {
             "$InterpolationScheme" => {
                 interpolation_scheme::parse(line_reader, &mut mesh)?;
             }
-            _ if trimmed.starts_with('$') && !trimmed.starts_with("$End") => {
+            _ if first_token.value.starts_with('$') && !first_token.value.starts_with("$End") => {
                 // Unknown section - skip it and add warning
-                let warning = ParseWarning::new(format!("Skipping unknown section: {}", trimmed));
+                let warning = ParseWarning::new(format!("Skipping unknown section: {}", first_token.value));
                 mesh.warnings.push(warning);
-                skip_section(line_reader, trimmed)?;
+                skip_section(line_reader, &first_token.value)?;
             }
             _ => {
                 // Unexpected content outside of sections - add warning
                 let warning = ParseWarning::new(format!(
                     "Unexpected content outside of sections: {}",
-                    trimmed
+                    first_token.value
                 ));
                 mesh.warnings.push(warning);
             }
         }
-    }
-
-    if !mesh_format_parsed {
-        return Err(ParseError::MissingSection("MeshFormat".to_string()));
     }
 
     Ok(mesh)
@@ -117,11 +120,12 @@ fn parse_msh_internal(line_reader: &mut LineReader) -> Result<Mesh> {
 fn skip_section(reader: &mut LineReader, section_name: &str) -> Result<()> {
     let end_marker = format!("$End{}", &section_name[1..]);
 
-    while let Some(line) = reader.next_line() {
-        if line.trim() == end_marker {
+    loop {
+        let token_line = reader.read_token_line()?;
+        let first_token = token_line.iter().peek_token()?;
+
+        if first_token.value == end_marker {
             return Ok(());
         }
     }
-
-    Err(ParseError::UnexpectedEof)
 }

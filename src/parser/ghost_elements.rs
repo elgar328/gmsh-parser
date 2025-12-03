@@ -8,25 +8,22 @@ use super::LineReader;
 pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
     // Read number of ghost elements
     let token_line = reader.read_token_line()?;
-    let num_ghost_elements = token_line.tokens[0].parse_usize("numGhostElements")?;
+    let mut iter = token_line.iter();
+
+    let num_ghost_elements = iter.parse_usize("numGhostElements")?;
 
     for _ in 0..num_ghost_elements {
         // Read: elementTag partitionTag numGhostPartitions ghostPartitionTag ...
         let token_line = reader.read_token_line()?;
+        let mut iter = token_line.iter();
 
-        token_line.expect_min_len(3)?;
+        let element_tag = iter.parse_usize("elementTag")?;
+        let partition_tag = iter.parse_int("partitionTag")?;
 
-        let element_tag = token_line.tokens[0].parse_usize("elementTag")?;
-        let partition_tag = token_line.tokens[1].parse_int("partitionTag")?;
-        let num_ghost_partitions = token_line.tokens[2].parse_usize("numGhostPartitions")?;
+        let num_ghost_partitions = iter.parse_usize("numGhostPartitions")?;
+        let ghost_partition_tags = iter.parse_ints(num_ghost_partitions, "ghostPartitionTag")?;
 
-        token_line.expect_min_len(3 + num_ghost_partitions)?;
-
-        let mut ghost_partition_tags = Vec::with_capacity(num_ghost_partitions);
-        for j in 0..num_ghost_partitions {
-            let tag = token_line.tokens[3 + j].parse_int("ghostPartitionTag")?;
-            ghost_partition_tags.push(tag);
-        }
+        iter.expect_no_more()?;
 
         mesh.ghost_elements.push(GhostElement {
             element_tag,
@@ -56,7 +53,7 @@ $EndGhostElements
 
         let source_file = SourceFile::new(data.into());
         let mut reader = LineReader::new(source_file);
-        let mut mesh = Mesh::default();
+        let mut mesh = Mesh::dummy();
 
         parse(&mut reader, &mut mesh).unwrap();
 

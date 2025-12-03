@@ -16,31 +16,42 @@ pub fn parse_node_data(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
 
     // Read string tags
     let token_line = reader.read_token_line()?;
-    let num_string_tags = token_line.tokens[0].parse_usize("numStringTags")?;
+    let mut iter = token_line.iter();
+    let num_string_tags = iter.parse_usize("numStringTags")?;
+    iter.expect_no_more()?;
 
     for _ in 0..num_string_tags {
         let token_line = reader.read_token_line()?;
-        let tag = token_line.tokens[0].parse_quoted_string_to_line_end()?;
+        let mut iter = token_line.iter();
+        let tag = iter.parse_quoted_string_to_line_end()?;
         node_data.string_tags.push(tag);
     }
 
     // Read real tags
     let token_line = reader.read_token_line()?;
-    let num_real_tags = token_line.tokens[0].parse_usize("numRealTags")?;
+    let mut iter = token_line.iter();
+    let num_real_tags = iter.parse_usize("numRealTags")?;
+    iter.expect_no_more()?;
 
     for _ in 0..num_real_tags {
         let token_line = reader.read_token_line()?;
-        let tag = token_line.tokens[0].parse_float("realTag")?;
+        let mut iter = token_line.iter();
+        let tag = iter.parse_float("realTag")?;
+        iter.expect_no_more()?;
         node_data.real_tags.push(tag);
     }
 
     // Read integer tags
     let token_line = reader.read_token_line()?;
-    let num_integer_tags = token_line.tokens[0].parse_usize("numIntegerTags")?;
+    let mut iter = token_line.iter();
+    let num_integer_tags = iter.parse_usize("numIntegerTags")?;
+    iter.expect_no_more()?;
 
     for _ in 0..num_integer_tags {
         let token_line = reader.read_token_line()?;
-        let tag = token_line.tokens[0].parse_int("integerTag")?;
+        let mut iter = token_line.iter();
+        let tag = iter.parse_int("integerTag")?;
+        iter.expect_no_more()?;
         node_data.integer_tags.push(tag);
     }
 
@@ -59,19 +70,11 @@ pub fn parse_node_data(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
     // Read data
     for _ in 0..num_entities {
         let token_line = reader.read_token_line()?;
+        let mut iter = token_line.iter();
 
-        if token_line.tokens.is_empty() {
-            continue;
-        }
-
-        let node_tag = token_line.tokens[0].parse_usize("nodeTag")?;
-
-        token_line.expect_min_len(1 + num_components)?;
-        let mut values = Vec::with_capacity(num_components);
-        for i in 0..num_components {
-            let value = token_line.tokens[1 + i].parse_float(&format!("value[{}]", i))?;
-            values.push(value);
-        }
+        let node_tag = iter.parse_usize("nodeTag")?;
+        let values = iter.parse_floats(num_components, "value")?;
+        iter.expect_no_more()?;
 
         node_data.data.push((node_tag, values));
     }
@@ -94,31 +97,42 @@ pub fn parse_element_data(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()
 
     // Read string tags
     let token_line = reader.read_token_line()?;
-    let num_string_tags = token_line.tokens[0].parse_usize("numStringTags")?;
+    let mut iter = token_line.iter();
+    let num_string_tags = iter.parse_usize("numStringTags")?;
+    iter.expect_no_more()?;
 
     for _ in 0..num_string_tags {
         let token_line = reader.read_token_line()?;
-        let tag = token_line.tokens[0].parse_quoted_string_to_line_end()?;
+        let mut iter = token_line.iter();
+        let tag = iter.parse_quoted_string_to_line_end()?;
         element_data.string_tags.push(tag);
     }
 
     // Read real tags
     let token_line = reader.read_token_line()?;
-    let num_real_tags = token_line.tokens[0].parse_usize("numRealTags")?;
+    let mut iter = token_line.iter();
+    let num_real_tags = iter.parse_usize("numRealTags")?;
+    iter.expect_no_more()?;
 
     for _ in 0..num_real_tags {
         let token_line = reader.read_token_line()?;
-        let tag = token_line.tokens[0].parse_float("realTag")?;
+        let mut iter = token_line.iter();
+        let tag = iter.parse_float("realTag")?;
+        iter.expect_no_more()?;
         element_data.real_tags.push(tag);
     }
 
     // Read integer tags
     let token_line = reader.read_token_line()?;
-    let num_integer_tags = token_line.tokens[0].parse_usize("numIntegerTags")?;
+    let mut iter = token_line.iter();
+    let num_integer_tags = iter.parse_usize("numIntegerTags")?;
+    iter.expect_no_more()?;
 
     for _ in 0..num_integer_tags {
         let token_line = reader.read_token_line()?;
-        let tag = token_line.tokens[0].parse_int("integerTag")?;
+        let mut iter = token_line.iter();
+        let tag = iter.parse_int("integerTag")?;
+        iter.expect_no_more()?;
         element_data.integer_tags.push(tag);
     }
 
@@ -137,19 +151,11 @@ pub fn parse_element_data(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()
     // Read data
     for _ in 0..num_entities {
         let token_line = reader.read_token_line()?;
+        let mut iter = token_line.iter();
 
-        if token_line.tokens.is_empty() {
-            continue;
-        }
-
-        let element_tag = token_line.tokens[0].parse_usize("elementTag")?;
-
-        token_line.expect_min_len(1 + num_components)?;
-        let mut values = Vec::with_capacity(num_components);
-        for i in 0..num_components {
-            let value = token_line.tokens[1 + i].parse_float(&format!("value[{}]", i))?;
-            values.push(value);
-        }
+        let element_tag = iter.parse_usize("elementTag")?;
+        let values = iter.parse_floats(num_components, "value")?;
+        iter.expect_no_more()?;
 
         element_data.data.push((element_tag, values));
     }
@@ -172,31 +178,42 @@ pub fn parse_element_node_data(reader: &mut LineReader, mesh: &mut Mesh) -> Resu
 
     // Read string tags
     let token_line = reader.read_token_line()?;
-    let num_string_tags = token_line.tokens[0].parse_usize("numStringTags")?;
+    let mut iter = token_line.iter();
+    let num_string_tags = iter.parse_usize("numStringTags")?;
+    iter.expect_no_more()?;
 
     for _ in 0..num_string_tags {
         let token_line = reader.read_token_line()?;
-        let tag = token_line.tokens[0].parse_quoted_string_to_line_end()?;
+        let mut iter = token_line.iter();
+        let tag = iter.parse_quoted_string_to_line_end()?;
         element_node_data.string_tags.push(tag);
     }
 
     // Read real tags
     let token_line = reader.read_token_line()?;
-    let num_real_tags = token_line.tokens[0].parse_usize("numRealTags")?;
+    let mut iter = token_line.iter();
+    let num_real_tags = iter.parse_usize("numRealTags")?;
+    iter.expect_no_more()?;
 
     for _ in 0..num_real_tags {
         let token_line = reader.read_token_line()?;
-        let tag = token_line.tokens[0].parse_float("realTag")?;
+        let mut iter = token_line.iter();
+        let tag = iter.parse_float("realTag")?;
+        iter.expect_no_more()?;
         element_node_data.real_tags.push(tag);
     }
 
     // Read integer tags
     let token_line = reader.read_token_line()?;
-    let num_integer_tags = token_line.tokens[0].parse_usize("numIntegerTags")?;
+    let mut iter = token_line.iter();
+    let num_integer_tags = iter.parse_usize("numIntegerTags")?;
+    iter.expect_no_more()?;
 
     for _ in 0..num_integer_tags {
         let token_line = reader.read_token_line()?;
-        let tag = token_line.tokens[0].parse_int("integerTag")?;
+        let mut iter = token_line.iter();
+        let tag = iter.parse_int("integerTag")?;
+        iter.expect_no_more()?;
         element_node_data.integer_tags.push(tag);
     }
 
@@ -215,20 +232,14 @@ pub fn parse_element_node_data(reader: &mut LineReader, mesh: &mut Mesh) -> Resu
     // Read data
     for _ in 0..num_entities {
         let token_line = reader.read_token_line()?;
+        let mut iter = token_line.iter();
 
-        token_line.expect_min_len(2)?;
-
-        let element_tag = token_line.tokens[0].parse_usize("elementTag")?;
-        let num_nodes_per_element = token_line.tokens[1].parse_usize("numNodesPerElement")?;
+        let element_tag = iter.parse_usize("elementTag")?;
+        let num_nodes_per_element = iter.parse_usize("numNodesPerElement")?;
 
         let total_values = num_components * num_nodes_per_element;
-        token_line.expect_min_len(2 + total_values)?;
-
-        let mut values = Vec::with_capacity(total_values);
-        for i in 0..total_values {
-            let value = token_line.tokens[2 + i].parse_float(&format!("value[{}]", i))?;
-            values.push(value);
-        }
+        let values = iter.parse_floats(total_values, "value")?;
+        iter.expect_no_more()?;
 
         element_node_data
             .data

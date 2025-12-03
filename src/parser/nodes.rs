@@ -5,13 +5,14 @@ use crate::types::{EntityDimension, Mesh, NodeBlock};
 
 pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
     let token_line = reader.read_token_line()?;
+    let mut iter = token_line.iter();
 
-    token_line.expect_len(4)?;
+    let num_entity_blocks = iter.parse_usize("numEntityBlocks")?;
+    let _num_nodes = iter.parse_usize("numNodes")?;
+    let _min_node_tag = iter.parse_usize("minNodeTag")?;
+    let _max_node_tag = iter.parse_usize("maxNodeTag")?;
 
-    let num_entity_blocks = token_line.tokens[0].parse_usize("numEntityBlocks")?;
-    let _num_nodes = token_line.tokens[1].parse_usize("numNodes")?;
-    let _min_node_tag = token_line.tokens[2].parse_usize("minNodeTag")?;
-    let _max_node_tag = token_line.tokens[3].parse_usize("maxNodeTag")?;
+    iter.expect_no_more()?;
 
     // Parse each entity block
     for _ in 0..num_entity_blocks {
@@ -27,31 +28,22 @@ pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
 
 fn parse_node_block(reader: &mut LineReader) -> Result<NodeBlock> {
     let token_line = reader.read_token_line()?;
+    let mut iter = token_line.iter();
 
-    token_line.expect_len(4)?;
+    let entity_dim = iter.parse_entity_dimension("entityDim")?;
+    let entity_tag = iter.parse_int("entityTag")?;
+    let is_parametric = iter.parse_bool("parametric")?;
+    let num_nodes_in_block = iter.parse_usize("numNodesInBlock")?;
 
-    let entity_dim = token_line.tokens[0].parse_entity_dimension("entityDim")?;
-    let entity_tag = token_line.tokens[1].parse_int("entityTag")?;
-    let parametric_value = token_line.tokens[2].parse_int("parametric")?;
-    let num_nodes_in_block = token_line.tokens[3].parse_usize("numNodesInBlock")?;
-
-    // Validate parametric value (must be 0 or 1)
-    let is_parametric = match parametric_value {
-        0 => false,
-        1 => true,
-        _ => {
-            return Err(token_line.tokens[2].invalid_data(format!(
-                "parametric must be 0 or 1, found {}",
-                parametric_value
-            )))
-        }
-    };
+    iter.expect_no_more()?;
 
     // First, read all node tags
     let mut node_tags = Vec::with_capacity(num_nodes_in_block);
     for _ in 0..num_nodes_in_block {
         let token_line = reader.read_token_line()?;
-        let tag = token_line.tokens[0].parse_usize("nodeTag")?;
+        let mut iter = token_line.iter();
+        let tag = iter.parse_usize("nodeTag")?;
+        iter.expect_no_more()?;
         node_tags.push(tag);
     }
 
@@ -62,10 +54,11 @@ fn parse_node_block(reader: &mut LineReader) -> Result<NodeBlock> {
             let mut nodes = Vec::with_capacity(num_nodes_in_block);
             for tag in node_tags.into_iter() {
                 let token_line = reader.read_token_line()?;
-                token_line.expect_len(3)?;
-                let x = token_line.tokens[0].parse_float("x")?;
-                let y = token_line.tokens[1].parse_float("y")?;
-                let z = token_line.tokens[2].parse_float("z")?;
+                let mut iter = token_line.iter();
+                let x = iter.parse_float("x")?;
+                let y = iter.parse_float("y")?;
+                let z = iter.parse_float("z")?;
+                iter.expect_no_more()?;
                 nodes.push(Node0D { tag, x, y, z });
             }
             Ok(NodeBlock::Point { entity_tag, nodes })
@@ -75,10 +68,11 @@ fn parse_node_block(reader: &mut LineReader) -> Result<NodeBlock> {
             let mut nodes = Vec::with_capacity(num_nodes_in_block);
             for tag in node_tags.into_iter() {
                 let token_line = reader.read_token_line()?;
-                token_line.expect_len(3)?;
-                let x = token_line.tokens[0].parse_float("x")?;
-                let y = token_line.tokens[1].parse_float("y")?;
-                let z = token_line.tokens[2].parse_float("z")?;
+                let mut iter = token_line.iter();
+                let x = iter.parse_float("x")?;
+                let y = iter.parse_float("y")?;
+                let z = iter.parse_float("z")?;
+                iter.expect_no_more()?;
                 nodes.push(Node1D { tag, x, y, z });
             }
             Ok(NodeBlock::Curve { entity_tag, nodes })
@@ -88,11 +82,12 @@ fn parse_node_block(reader: &mut LineReader) -> Result<NodeBlock> {
             let mut nodes = Vec::with_capacity(num_nodes_in_block);
             for tag in node_tags.into_iter() {
                 let token_line = reader.read_token_line()?;
-                token_line.expect_len(4)?;
-                let x = token_line.tokens[0].parse_float("x")?;
-                let y = token_line.tokens[1].parse_float("y")?;
-                let z = token_line.tokens[2].parse_float("z")?;
-                let u = token_line.tokens[3].parse_float("u")?;
+                let mut iter = token_line.iter();
+                let x = iter.parse_float("x")?;
+                let y = iter.parse_float("y")?;
+                let z = iter.parse_float("z")?;
+                let u = iter.parse_float("u")?;
+                iter.expect_no_more()?;
                 nodes.push(Node1DParametric { tag, x, y, z, u });
             }
             Ok(NodeBlock::CurveParametric { entity_tag, nodes })
@@ -102,10 +97,11 @@ fn parse_node_block(reader: &mut LineReader) -> Result<NodeBlock> {
             let mut nodes = Vec::with_capacity(num_nodes_in_block);
             for tag in node_tags.into_iter() {
                 let token_line = reader.read_token_line()?;
-                token_line.expect_len(3)?;
-                let x = token_line.tokens[0].parse_float("x")?;
-                let y = token_line.tokens[1].parse_float("y")?;
-                let z = token_line.tokens[2].parse_float("z")?;
+                let mut iter = token_line.iter();
+                let x = iter.parse_float("x")?;
+                let y = iter.parse_float("y")?;
+                let z = iter.parse_float("z")?;
+                iter.expect_no_more()?;
                 nodes.push(Node2D { tag, x, y, z });
             }
             Ok(NodeBlock::Surface { entity_tag, nodes })
@@ -115,12 +111,13 @@ fn parse_node_block(reader: &mut LineReader) -> Result<NodeBlock> {
             let mut nodes = Vec::with_capacity(num_nodes_in_block);
             for tag in node_tags.into_iter() {
                 let token_line = reader.read_token_line()?;
-                token_line.expect_len(5)?;
-                let x = token_line.tokens[0].parse_float("x")?;
-                let y = token_line.tokens[1].parse_float("y")?;
-                let z = token_line.tokens[2].parse_float("z")?;
-                let u = token_line.tokens[3].parse_float("u")?;
-                let v = token_line.tokens[4].parse_float("v")?;
+                let mut iter = token_line.iter();
+                let x = iter.parse_float("x")?;
+                let y = iter.parse_float("y")?;
+                let z = iter.parse_float("z")?;
+                let u = iter.parse_float("u")?;
+                let v = iter.parse_float("v")?;
+                iter.expect_no_more()?;
                 nodes.push(Node2DParametric { tag, x, y, z, u, v });
             }
             Ok(NodeBlock::SurfaceParametric { entity_tag, nodes })
@@ -130,10 +127,11 @@ fn parse_node_block(reader: &mut LineReader) -> Result<NodeBlock> {
             let mut nodes = Vec::with_capacity(num_nodes_in_block);
             for tag in node_tags.into_iter() {
                 let token_line = reader.read_token_line()?;
-                token_line.expect_len(3)?;
-                let x = token_line.tokens[0].parse_float("x")?;
-                let y = token_line.tokens[1].parse_float("y")?;
-                let z = token_line.tokens[2].parse_float("z")?;
+                let mut iter = token_line.iter();
+                let x = iter.parse_float("x")?;
+                let y = iter.parse_float("y")?;
+                let z = iter.parse_float("z")?;
+                iter.expect_no_more()?;
                 nodes.push(Node3D { tag, x, y, z });
             }
             Ok(NodeBlock::Volume { entity_tag, nodes })
@@ -143,13 +141,14 @@ fn parse_node_block(reader: &mut LineReader) -> Result<NodeBlock> {
             let mut nodes = Vec::with_capacity(num_nodes_in_block);
             for tag in node_tags.into_iter() {
                 let token_line = reader.read_token_line()?;
-                token_line.expect_len(6)?;
-                let x = token_line.tokens[0].parse_float("x")?;
-                let y = token_line.tokens[1].parse_float("y")?;
-                let z = token_line.tokens[2].parse_float("z")?;
-                let u = token_line.tokens[3].parse_float("u")?;
-                let v = token_line.tokens[4].parse_float("v")?;
-                let w = token_line.tokens[5].parse_float("w")?;
+                let mut iter = token_line.iter();
+                let x = iter.parse_float("x")?;
+                let y = iter.parse_float("y")?;
+                let z = iter.parse_float("z")?;
+                let u = iter.parse_float("u")?;
+                let v = iter.parse_float("v")?;
+                let w = iter.parse_float("w")?;
+                iter.expect_no_more()?;
                 nodes.push(Node3DParametric {
                     tag,
                     x,
@@ -185,7 +184,7 @@ $EndNodes
 
         let source_file = SourceFile::new(data.into());
         let mut reader = LineReader::new(source_file);
-        let mut mesh = Mesh::default();
+        let mut mesh = Mesh::dummy();
 
         let result = parse(&mut reader, &mut mesh);
         assert!(result.is_ok());

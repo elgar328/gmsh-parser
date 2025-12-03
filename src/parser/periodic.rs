@@ -8,40 +8,42 @@ use super::LineReader;
 pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
     // Read number of periodic links
     let token_line = reader.read_token_line()?;
-    let num_periodic_links = token_line.tokens[0].parse_usize("numPeriodicLinks")?;
+    let mut iter = token_line.iter();
+    let num_periodic_links = iter.parse_usize("numPeriodicLinks")?;
+    iter.expect_no_more()?;
 
     for _ in 0..num_periodic_links {
         // Read entity info: entityDim entityTag entityTagMaster
         let token_line = reader.read_token_line()?;
-        token_line.expect_len(3)?;
+        let mut iter = token_line.iter();
 
-        let entity_dim = token_line.tokens[0].parse_entity_dimension("entityDim")?;
-        let entity_tag = token_line.tokens[1].parse_int("entityTag")?;
-        let entity_tag_master = token_line.tokens[2].parse_int("entityTagMaster")?;
+        let entity_dim = iter.parse_entity_dimension("entityDim")?;
+        let entity_tag = iter.parse_int("entityTag")?;
+        let entity_tag_master = iter.parse_int("entityTagMaster")?;
+        iter.expect_no_more()?;
 
         // Read affine transform
         let token_line = reader.read_token_line()?;
+        let mut iter = token_line.iter();
 
-        let num_affine = token_line.tokens[0].parse_usize("numAffine")?;
-
-        token_line.expect_min_len(1 + num_affine)?;
-        let mut affine_transform = Vec::with_capacity(num_affine);
-        for j in 0..num_affine {
-            let value = token_line.tokens[1 + j].parse_float("affineValue")?;
-            affine_transform.push(value);
-        }
+        let num_affine = iter.parse_usize("numAffine")?;
+        let affine_transform = iter.parse_floats(num_affine, "affineValue")?;
+        iter.expect_no_more()?;
 
         // Read node correspondences
         let token_line = reader.read_token_line()?;
-        let num_corresponding_nodes = token_line.tokens[0].parse_usize("numCorrespondingNodes")?;
+        let mut iter = token_line.iter();
+        let num_corresponding_nodes = iter.parse_usize("numCorrespondingNodes")?;
+        iter.expect_no_more()?;
 
         let mut node_correspondences = Vec::with_capacity(num_corresponding_nodes);
         for _ in 0..num_corresponding_nodes {
             let token_line = reader.read_token_line()?;
-            token_line.expect_len(2)?;
+            let mut iter = token_line.iter();
 
-            let node_tag = token_line.tokens[0].parse_usize("nodeTag")?;
-            let node_tag_master = token_line.tokens[1].parse_usize("nodeTagMaster")?;
+            let node_tag = iter.parse_usize("nodeTag")?;
+            let node_tag_master = iter.parse_usize("nodeTagMaster")?;
+            iter.expect_no_more()?;
 
             node_correspondences.push((node_tag, node_tag_master));
         }
@@ -80,7 +82,7 @@ $EndPeriodic
 
         let source_file = SourceFile::new(data.into());
         let mut reader = LineReader::new(source_file);
-        let mut mesh = Mesh::default();
+        let mut mesh = Mesh::dummy();
 
         parse(&mut reader, &mut mesh).unwrap();
 

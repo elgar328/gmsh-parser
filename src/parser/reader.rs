@@ -34,7 +34,6 @@ pub struct LineReader {
     lines: std::io::Lines<BufReader<Cursor<Vec<u8>>>>,
     source: Arc<String>,
     current_offset: usize,
-    line_number: usize,
 }
 
 impl LineReader {
@@ -47,61 +46,49 @@ impl LineReader {
             lines: reader.lines(),
             source: source.content,
             current_offset: 0,
-            line_number: 0,
         }
     }
 
-    pub fn current_line(&self) -> usize {
-        self.line_number
-    }
-
-    pub fn next_line(&mut self) -> Option<String> {
-        self.lines.next().map(|result| {
-            let line = result.expect("I/O error cannot occur when reading from Cursor");
-            self.line_number += 1;
-            // Update offset: add line length + newline character
-            self.current_offset += line.len() + 1;
-            line
-        })
+    fn next_line(&mut self) -> Result<String> {
+        let line = self
+            .lines
+            .next()
+            .ok_or(ParseError::UnexpectedEof)?
+            .expect("I/O error cannot occur when reading from Cursor");
+        self.current_offset += line.len() + 1;
+        Ok(line)
     }
 
     /// Read the next non-empty line and tokenize it
     pub fn read_token_line(&mut self) -> Result<TokenLine> {
         loop {
-            match self.next_line() {
-                Some(line) => {
-                    let trimmed = line.trim();
-                    if !trimmed.is_empty() {
-                        let tokens = self.tokenize_line(&line, trimmed);
-                        return Ok(TokenLine::new(tokens, self.line_number, line));
-                    }
-                }
-                None => return Err(ParseError::UnexpectedEof),
+            let line_start_offset = self.current_offset;
+            let line = self.next_line()?;
+
+            if line.trim().is_empty() {
+                continue;
             }
+
+            // Tokenize the line
+            let mut tokens = Vec::new();
+            let mut current_pos = 0;
+
+            for word in line.split_whitespace() {
+                // Find the position of this word in the original line
+                let word_start = line[current_pos..].find(word).unwrap() + current_pos;
+                let byte_offset = line_start_offset + word_start;
+
+                let token = Token::new(
+                    word.to_string(),
+                    Span::new(byte_offset, word.len()),
+                    Arc::clone(&self.source),
+                );
+
+                tokens.push(token);
+                current_pos = word_start + word.len();
+            }
+
+            return Ok(TokenLine::new(tokens));
         }
-    }
-
-    fn tokenize_line(&self, full_line: &str, trimmed: &str) -> Vec<Token> {
-        let line_start_offset = self.current_offset - full_line.len() - 1;
-
-        let mut tokens = Vec::new();
-        let mut current_pos = 0;
-
-        for word in trimmed.split_whitespace() {
-            // Find the position of this word in the original line
-            let word_start = full_line[current_pos..].find(word).unwrap() + current_pos;
-            let byte_offset = line_start_offset + word_start;
-
-            let token = Token::new(
-                word.to_string(),
-                Span::new(byte_offset, word.len()),
-                Arc::clone(&self.source),
-            );
-
-            tokens.push(token);
-            current_pos = word_start + word.len();
-        }
-
-        tokens
     }
 }

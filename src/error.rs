@@ -67,16 +67,8 @@ pub enum ParseError {
         msh_content: Arc<String>,
     },
 
-    #[error("Unsupported file type (only ASCII mode is supported)")]
-    UnsupportedFileType {
-        file_type: FileType,
-
-        #[label("unsupported file type: {file_type:?}")]
-        span: SourceSpan,
-
-        #[source_code]
-        msh_content: Arc<String>,
-    },
+    #[error("Unsupported file type: {file_type} (only ASCII mode is supported)")]
+    UnsupportedFileType { file_type: FileType },
 
     #[error("Invalid section")]
     InvalidSection {

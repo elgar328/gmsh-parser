@@ -13,31 +13,37 @@ pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
 
     // Read: numPartitions
     let token_line = reader.read_token_line()?;
-    partitioned.num_partitions = token_line.tokens[0].parse_usize("numPartitions")?;
+    let mut iter = token_line.iter();
+    partitioned.num_partitions = iter.parse_usize("numPartitions")?;
+    iter.expect_no_more()?;
 
     // Read: numGhostEntities
     let token_line = reader.read_token_line()?;
-    let num_ghost_entities = token_line.tokens[0].parse_usize("numGhostEntities")?;
+    let mut iter = token_line.iter();
+    let num_ghost_entities = iter.parse_usize("numGhostEntities")?;
+    iter.expect_no_more()?;
 
     // Read ghost entities
     for _ in 0..num_ghost_entities {
         let token_line = reader.read_token_line()?;
-        token_line.expect_len(2)?;
+        let mut iter = token_line.iter();
 
         partitioned.ghost_entities.push(GhostEntity {
-            tag: token_line.tokens[0].parse_int("ghostEntityTag")?,
-            partition: token_line.tokens[1].parse_int("ghostEntityPartition")?,
+            tag: iter.parse_int("ghostEntityTag")?,
+            partition: iter.parse_int("ghostEntityPartition")?,
         });
+        iter.expect_no_more()?;
     }
 
     // Read: numPoints numCurves numSurfaces numVolumes
     let token_line = reader.read_token_line()?;
+    let mut iter = token_line.iter();
 
-    token_line.expect_len(4)?;
-    let num_points = token_line.tokens[0].parse_usize("numPoints")?;
-    let num_curves = token_line.tokens[1].parse_usize("numCurves")?;
-    let num_surfaces = token_line.tokens[2].parse_usize("numSurfaces")?;
-    let num_volumes = token_line.tokens[3].parse_usize("numVolumes")?;
+    let num_points = iter.parse_usize("numPoints")?;
+    let num_curves = iter.parse_usize("numCurves")?;
+    let num_surfaces = iter.parse_usize("numSurfaces")?;
+    let num_volumes = iter.parse_usize("numVolumes")?;
+    iter.expect_no_more()?;
 
     // Parse points
     for _ in 0..num_points {
@@ -72,35 +78,22 @@ pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
 fn parse_partitioned_point(reader: &mut LineReader) -> Result<PartitionedPoint> {
     // Single line: pointTag parentDim parentTag numPartitions partitionTag ... x y z numPhysicalTags physicalTag ...
     let token_line = reader.read_token_line()?;
+    let mut iter = token_line.iter();
 
-    token_line.expect_min_len(4)?;
+    let tag = iter.parse_int("tag")?;
+    let parent_dim = iter.parse_entity_dimension("parent_dim")?;
+    let parent_tag = iter.parse_int("parent_tag")?;
+    let num_partitions = iter.parse_usize("numPartitions")?;
 
-    let tag = token_line.tokens[0].parse_int("tag")?;
-    let parent_dim = token_line.tokens[1].parse_entity_dimension("parent_dim")?;
-    let parent_tag = token_line.tokens[2].parse_int("parent_tag")?;
-    let num_partitions = token_line.tokens[3].parse_usize("numPartitions")?;
+    let partition_tags = iter.parse_ints(num_partitions, "partitionTag")?;
 
-    token_line.expect_min_len(4 + num_partitions)?;
-    let mut partition_tags = Vec::with_capacity(num_partitions);
-    for i in 0..num_partitions {
-        partition_tags.push(token_line.tokens[4 + i].parse_int("partitionTag")?);
-    }
+    let x = iter.parse_float("x")?;
+    let y = iter.parse_float("y")?;
+    let z = iter.parse_float("z")?;
+    let num_physical_tags = iter.parse_usize("numPhysicalTags")?;
 
-    // Continue parsing from the same line: x y z numPhysicalTags physicalTag ...
-    let coord_offset = 4 + num_partitions;
-    token_line.expect_min_len(coord_offset + 4)?;
-
-    let x = token_line.tokens[coord_offset].parse_float("x")?;
-    let y = token_line.tokens[coord_offset + 1].parse_float("y")?;
-    let z = token_line.tokens[coord_offset + 2].parse_float("z")?;
-    let num_physical_tags = token_line.tokens[coord_offset + 3].parse_usize("numPhysicalTags")?;
-
-    token_line.expect_min_len(coord_offset + 4 + num_physical_tags)?;
-    let mut physical_tags = Vec::with_capacity(num_physical_tags);
-    for i in 0..num_physical_tags {
-        let idx = coord_offset + 4 + i;
-        physical_tags.push(token_line.tokens[idx].parse_int("physicalTag")?);
-    }
+    let physical_tags = iter.parse_ints(num_physical_tags, "physicalTag")?;
+    iter.expect_no_more()?;
 
     Ok(PartitionedPoint {
         tag,
@@ -117,51 +110,28 @@ fn parse_partitioned_point(reader: &mut LineReader) -> Result<PartitionedPoint> 
 fn parse_partitioned_curve(reader: &mut LineReader) -> Result<PartitionedCurve> {
     // Single line: curveTag parentDim parentTag numPartitions partitionTag ... minX minY minZ maxX maxY maxZ numPhysicalTags physicalTag ... numBoundingPoints pointTag ...
     let token_line = reader.read_token_line()?;
-    token_line.expect_min_len(4)?;
+    let mut iter = token_line.iter();
 
-    let tag = token_line.tokens[0].parse_int("tag")?;
-    let parent_dim = token_line.tokens[1].parse_entity_dimension("parent_dim")?;
-    let parent_tag = token_line.tokens[2].parse_int("parent_tag")?;
-    let num_partitions = token_line.tokens[3].parse_usize("numPartitions")?;
+    let tag = iter.parse_int("tag")?;
+    let parent_dim = iter.parse_entity_dimension("parent_dim")?;
+    let parent_tag = iter.parse_int("parent_tag")?;
+    let num_partitions = iter.parse_usize("numPartitions")?;
 
-    token_line.expect_min_len(4 + num_partitions)?;
-    let mut partition_tags = Vec::with_capacity(num_partitions);
-    for i in 0..num_partitions {
-        partition_tags.push(token_line.tokens[4 + i].parse_int("partitionTag")?);
-    }
+    let partition_tags = iter.parse_ints(num_partitions, "partitionTag")?;
 
-    // Continue parsing: minX minY minZ maxX maxY maxZ numPhysicalTags physicalTag ...
-    let bbox_offset = 4 + num_partitions;
-    token_line.expect_min_len(bbox_offset + 7)?;
+    let min_x = iter.parse_float("minX")?;
+    let min_y = iter.parse_float("minY")?;
+    let min_z = iter.parse_float("minZ")?;
+    let max_x = iter.parse_float("maxX")?;
+    let max_y = iter.parse_float("maxY")?;
+    let max_z = iter.parse_float("maxZ")?;
+    let num_physical_tags = iter.parse_usize("numPhysicalTags")?;
 
-    let min_x = token_line.tokens[bbox_offset].parse_float("minX")?;
-    let min_y = token_line.tokens[bbox_offset + 1].parse_float("minY")?;
-    let min_z = token_line.tokens[bbox_offset + 2].parse_float("minZ")?;
-    let max_x = token_line.tokens[bbox_offset + 3].parse_float("maxX")?;
-    let max_y = token_line.tokens[bbox_offset + 4].parse_float("maxY")?;
-    let max_z = token_line.tokens[bbox_offset + 5].parse_float("maxZ")?;
-    let num_physical_tags = token_line.tokens[bbox_offset + 6].parse_usize("numPhysicalTags")?;
+    let physical_tags = iter.parse_ints(num_physical_tags, "physicalTag")?;
 
-    token_line.expect_min_len(bbox_offset + 7 + num_physical_tags)?;
-    let mut physical_tags = Vec::with_capacity(num_physical_tags);
-    for i in 0..num_physical_tags {
-        let idx = bbox_offset + 7 + i;
-        physical_tags.push(token_line.tokens[idx].parse_int("physicalTag")?);
-    }
-
-    // Continue parsing: numBoundingPoints pointTag ...
-    let boundary_offset = bbox_offset + 7 + num_physical_tags;
-    token_line.expect_min_len(boundary_offset)?;
-
-    let num_bounding_points =
-        token_line.tokens[boundary_offset].parse_usize("numBoundingPoints")?;
-
-    token_line.expect_min_len(boundary_offset + 1 + num_bounding_points)?;
-    let mut bounding_points = Vec::with_capacity(num_bounding_points);
-    for i in 0..num_bounding_points {
-        let idx = boundary_offset + 1 + i;
-        bounding_points.push(token_line.tokens[idx].parse_int("boundingPoint")?);
-    }
+    let num_bounding_points = iter.parse_usize("numBoundingPoints")?;
+    let bounding_points = iter.parse_ints(num_bounding_points, "boundingPoint")?;
+    iter.expect_no_more()?;
 
     Ok(PartitionedCurve {
         tag,
@@ -182,52 +152,28 @@ fn parse_partitioned_curve(reader: &mut LineReader) -> Result<PartitionedCurve> 
 fn parse_partitioned_surface(reader: &mut LineReader) -> Result<PartitionedSurface> {
     // Single line: surfaceTag parentDim parentTag numPartitions partitionTag ... minX minY minZ maxX maxY maxZ numPhysicalTags physicalTag ... numBoundingCurves curveTag ...
     let token_line = reader.read_token_line()?;
+    let mut iter = token_line.iter();
 
-    token_line.expect_min_len(4)?;
+    let tag = iter.parse_int("tag")?;
+    let parent_dim = iter.parse_entity_dimension("parent_dim")?;
+    let parent_tag = iter.parse_int("parent_tag")?;
+    let num_partitions = iter.parse_usize("numPartitions")?;
 
-    let tag = token_line.tokens[0].parse_int("tag")?;
-    let parent_dim = token_line.tokens[1].parse_entity_dimension("parent_dim")?;
-    let parent_tag = token_line.tokens[2].parse_int("parent_tag")?;
-    let num_partitions = token_line.tokens[3].parse_usize("numPartitions")?;
+    let partition_tags = iter.parse_ints(num_partitions, "partitionTag")?;
 
-    token_line.expect_min_len(4 + num_partitions)?;
-    let mut partition_tags = Vec::with_capacity(num_partitions);
-    for i in 0..num_partitions {
-        partition_tags.push(token_line.tokens[4 + i].parse_int("partitionTag")?);
-    }
+    let min_x = iter.parse_float("minX")?;
+    let min_y = iter.parse_float("minY")?;
+    let min_z = iter.parse_float("minZ")?;
+    let max_x = iter.parse_float("maxX")?;
+    let max_y = iter.parse_float("maxY")?;
+    let max_z = iter.parse_float("maxZ")?;
+    let num_physical_tags = iter.parse_usize("numPhysicalTags")?;
 
-    // Continue parsing: minX minY minZ maxX maxY maxZ numPhysicalTags physicalTag ...
-    let bbox_offset = 4 + num_partitions;
-    token_line.expect_min_len(bbox_offset + 7)?;
+    let physical_tags = iter.parse_ints(num_physical_tags, "physicalTag")?;
 
-    let min_x = token_line.tokens[bbox_offset].parse_float("minX")?;
-    let min_y = token_line.tokens[bbox_offset + 1].parse_float("minY")?;
-    let min_z = token_line.tokens[bbox_offset + 2].parse_float("minZ")?;
-    let max_x = token_line.tokens[bbox_offset + 3].parse_float("maxX")?;
-    let max_y = token_line.tokens[bbox_offset + 4].parse_float("maxY")?;
-    let max_z = token_line.tokens[bbox_offset + 5].parse_float("maxZ")?;
-    let num_physical_tags = token_line.tokens[bbox_offset + 6].parse_usize("numPhysicalTags")?;
-
-    token_line.expect_min_len(bbox_offset + 7 + num_physical_tags)?;
-    let mut physical_tags = Vec::with_capacity(num_physical_tags);
-    for i in 0..num_physical_tags {
-        let idx = bbox_offset + 7 + i;
-        physical_tags.push(token_line.tokens[idx].parse_int("physicalTag")?);
-    }
-
-    // Continue parsing: numBoundingCurves curveTag ...
-    let boundary_offset = bbox_offset + 7 + num_physical_tags;
-    token_line.expect_min_len(boundary_offset)?;
-
-    let num_bounding_curves =
-        token_line.tokens[boundary_offset].parse_usize("numBoundingCurves")?;
-
-    token_line.expect_min_len(boundary_offset + 1 + num_bounding_curves)?;
-    let mut bounding_curves = Vec::with_capacity(num_bounding_curves);
-    for i in 0..num_bounding_curves {
-        let idx = boundary_offset + 1 + i;
-        bounding_curves.push(token_line.tokens[idx].parse_int("boundingCurve")?);
-    }
+    let num_bounding_curves = iter.parse_usize("numBoundingCurves")?;
+    let bounding_curves = iter.parse_ints(num_bounding_curves, "boundingCurve")?;
+    iter.expect_no_more()?;
 
     Ok(PartitionedSurface {
         tag,
@@ -248,51 +194,28 @@ fn parse_partitioned_surface(reader: &mut LineReader) -> Result<PartitionedSurfa
 fn parse_partitioned_volume(reader: &mut LineReader) -> Result<PartitionedVolume> {
     // Single line: volumeTag parentDim parentTag numPartitions partitionTag ... minX minY minZ maxX maxY maxZ numPhysicalTags physicalTag ... numBoundingSurfaces surfaceTag ...
     let token_line = reader.read_token_line()?;
-    token_line.expect_min_len(4)?;
+    let mut iter = token_line.iter();
 
-    let tag = token_line.tokens[0].parse_int("tag")?;
-    let parent_dim = token_line.tokens[1].parse_entity_dimension("parent_dim")?;
-    let parent_tag = token_line.tokens[2].parse_int("parent_tag")?;
-    let num_partitions = token_line.tokens[3].parse_usize("numPartitions")?;
+    let tag = iter.parse_int("tag")?;
+    let parent_dim = iter.parse_entity_dimension("parent_dim")?;
+    let parent_tag = iter.parse_int("parent_tag")?;
+    let num_partitions = iter.parse_usize("numPartitions")?;
 
-    token_line.expect_min_len(4 + num_partitions)?;
-    let mut partition_tags = Vec::with_capacity(num_partitions);
-    for i in 0..num_partitions {
-        partition_tags.push(token_line.tokens[4 + i].parse_int("partitionTag")?);
-    }
+    let partition_tags = iter.parse_ints(num_partitions, "partitionTag")?;
 
-    // Continue parsing: minX minY minZ maxX maxY maxZ numPhysicalTags physicalTag ...
-    let bbox_offset = 4 + num_partitions;
-    token_line.expect_min_len(bbox_offset + 7)?;
+    let min_x = iter.parse_float("minX")?;
+    let min_y = iter.parse_float("minY")?;
+    let min_z = iter.parse_float("minZ")?;
+    let max_x = iter.parse_float("maxX")?;
+    let max_y = iter.parse_float("maxY")?;
+    let max_z = iter.parse_float("maxZ")?;
+    let num_physical_tags = iter.parse_usize("numPhysicalTags")?;
 
-    let min_x = token_line.tokens[bbox_offset].parse_float("minX")?;
-    let min_y = token_line.tokens[bbox_offset + 1].parse_float("minY")?;
-    let min_z = token_line.tokens[bbox_offset + 2].parse_float("minZ")?;
-    let max_x = token_line.tokens[bbox_offset + 3].parse_float("maxX")?;
-    let max_y = token_line.tokens[bbox_offset + 4].parse_float("maxY")?;
-    let max_z = token_line.tokens[bbox_offset + 5].parse_float("maxZ")?;
-    let num_physical_tags = token_line.tokens[bbox_offset + 6].parse_usize("numPhysicalTags")?;
+    let physical_tags = iter.parse_ints(num_physical_tags, "physicalTag")?;
 
-    token_line.expect_min_len(bbox_offset + 7 + num_physical_tags)?;
-    let mut physical_tags = Vec::with_capacity(num_physical_tags);
-    for i in 0..num_physical_tags {
-        let idx = bbox_offset + 7 + i;
-        physical_tags.push(token_line.tokens[idx].parse_int("physicalTag")?);
-    }
-
-    // Continue parsing: numBoundingSurfaces surfaceTag ...
-    let boundary_offset = bbox_offset + 7 + num_physical_tags;
-    token_line.expect_min_len(boundary_offset)?;
-
-    let num_bounding_surfaces =
-        token_line.tokens[boundary_offset].parse_usize("numBoundingSurfaces")?;
-
-    token_line.expect_min_len(boundary_offset + 1 + num_bounding_surfaces)?;
-    let mut bounding_surfaces = Vec::with_capacity(num_bounding_surfaces);
-    for i in 0..num_bounding_surfaces {
-        let idx = boundary_offset + 1 + i;
-        bounding_surfaces.push(token_line.tokens[idx].parse_int("boundingSurface")?);
-    }
+    let num_bounding_surfaces = iter.parse_usize("numBoundingSurfaces")?;
+    let bounding_surfaces = iter.parse_ints(num_bounding_surfaces, "boundingSurface")?;
+    iter.expect_no_more()?;
 
     Ok(PartitionedVolume {
         tag,
