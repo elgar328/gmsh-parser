@@ -48,6 +48,29 @@ impl NodeBlock {
         }
     }
 
+    /// Returns the dimension of the entity this block belongs to
+    pub fn entity_dim(&self) -> i32 {
+        match self {
+            Self::Point { .. } => 0,
+            Self::Curve { .. } | Self::CurveParametric { .. } => 1,
+            Self::Surface { .. } | Self::SurfaceParametric { .. } => 2,
+            Self::Volume { .. } | Self::VolumeParametric { .. } => 3,
+        }
+    }
+
+    /// Returns the tag of the entity this block belongs to
+    pub fn entity_tag(&self) -> i32 {
+        match self {
+            Self::Point { entity_tag, .. } => *entity_tag,
+            Self::Curve { entity_tag, .. } => *entity_tag,
+            Self::CurveParametric { entity_tag, .. } => *entity_tag,
+            Self::Surface { entity_tag, .. } => *entity_tag,
+            Self::SurfaceParametric { entity_tag, .. } => *entity_tag,
+            Self::Volume { entity_tag, .. } => *entity_tag,
+            Self::VolumeParametric { entity_tag, .. } => *entity_tag,
+        }
+    }
+
     /// Iterates over the tag of each node in this block
     pub fn for_each_tag<F>(&self, mut f: F)
     where

@@ -203,6 +203,10 @@ pub enum ParseError {
         #[source_code]
         msh_content: Arc<String>,
     },
+
+    #[error("Mesh validation error: {0}")]
+    #[diagnostic(code(gmsh::validation))]
+    MeshValidationError(String),
 }
 
 pub type Result<T> = std::result::Result<T, ParseError>;

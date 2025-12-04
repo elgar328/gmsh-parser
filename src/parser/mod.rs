@@ -113,6 +113,9 @@ fn parse_msh_internal(line_reader: &mut LineReader) -> Result<Mesh> {
         }
     }
 
+    // Validate mesh consistency
+    mesh.validate()?;
+
     Ok(mesh)
 }
 
