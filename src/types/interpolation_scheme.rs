@@ -18,6 +18,12 @@ pub enum ElementTopology {
     Polyhedra = 10,
 }
 
+impl std::fmt::Display for ElementTopology {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 impl ElementTopology {
     pub fn from_i32(value: i32) -> Option<Self> {
         match value {

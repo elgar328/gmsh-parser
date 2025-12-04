@@ -190,6 +190,12 @@ pub enum ElementType {
     TriHedron4,      // ID 140, 4 nodes
 }
 
+impl std::fmt::Display for ElementType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 impl ElementType {
     /// Convert from Gmsh element type ID to ElementType enum
     pub fn from_i32(id: i32) -> Option<Self> {

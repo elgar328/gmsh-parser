@@ -19,6 +19,17 @@ impl EntityDimension {
     }
 }
 
+impl std::fmt::Display for EntityDimension {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EntityDimension::Point => write!(f, "Point"),
+            EntityDimension::Curve => write!(f, "Curve"),
+            EntityDimension::Surface => write!(f, "Surface"),
+            EntityDimension::Volume => write!(f, "Volume"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PointEntity {
     pub tag: i32,
