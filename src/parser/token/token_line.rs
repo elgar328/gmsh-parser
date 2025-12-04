@@ -16,6 +16,7 @@ impl TokenLine {
     }
 
     /// Get the number of tokens
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.tokens.len()
     }

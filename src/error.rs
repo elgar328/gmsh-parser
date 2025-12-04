@@ -172,6 +172,26 @@ pub enum ParseError {
     #[error("Unexpected end of file")]
     UnexpectedEof,
 
+    #[error("Unexpected end of line")]
+    UnexpectedEndOfLine {
+        expected: String,
+
+        #[label("line ended unexpectedly, expected {expected}")]
+        span: SourceSpan,
+
+        #[source_code]
+        msh_content: Arc<String>,
+    },
+
+    #[error("Unexpected extra data")]
+    UnexpectedExtraData {
+        #[label("unexpected extra data at end of line")]
+        span: SourceSpan,
+
+        #[source_code]
+        msh_content: Arc<String>,
+    },
+
     #[error("Expected end of section marker")]
     ExpectedEndOfSection {
         expected: String,

@@ -23,8 +23,8 @@ impl<'a> TokenIter<'a> {
                 .expect("TokenLine should never be empty (guaranteed by TokenLine::new)");
             let end_offset = last_token.span.offset + last_token.span.len;
 
-            ParseError::InvalidFormat {
-                message: "Line ended unexpectedly, expected more data".to_string(),
+            ParseError::UnexpectedEndOfLine {
+                expected: "more data".to_string(),
                 span: (end_offset, 1).into(),
                 msh_content: last_token.source.clone(),
             }
@@ -57,8 +57,7 @@ impl<'a> TokenIter<'a> {
     /// Returns an error if there are remaining tokens
     pub fn expect_no_more(&mut self) -> Result<()> {
         if let Some(token) = self.next() {
-            return Err(ParseError::InvalidFormat {
-                message: "Unexpected extra data at end of line".to_string(),
+            return Err(ParseError::UnexpectedExtraData {
                 span: token.span.to_source_span(),
                 msh_content: token.source.clone(),
             });
