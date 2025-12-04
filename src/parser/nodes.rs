@@ -1,5 +1,6 @@
 use super::LineReader;
-use crate::error::Result;
+use crate::error::{ParseError, Result};
+use crate::parser::token::TokenIter;
 use crate::types::node::*;
 use crate::types::{EntityDimension, Mesh, NodeBlock};
 
@@ -8,11 +9,9 @@ pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
     let mut iter = token_line.iter();
 
     let num_entity_blocks = iter.parse_usize("numEntityBlocks")?;
-    let _num_nodes = iter.parse_usize("numNodes")?;
-    let _min_node_tag = iter.parse_usize("minNodeTag")?;
-    let _max_node_tag = iter.parse_usize("maxNodeTag")?;
 
-    iter.expect_no_more()?;
+    // Parse metadata and validate later (after parsing all blocks)
+    let metadata_iter = iter;
 
     // Parse each entity block
     for _ in 0..num_entity_blocks {
@@ -22,6 +21,9 @@ pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
 
     let token_line = reader.read_token_line()?;
     token_line.expect_end_marker("Nodes")?;
+
+    // Validate parsed nodes against metadata
+    validate_nodes_metadata(&mesh.node_blocks, metadata_iter)?;
 
     Ok(())
 }
@@ -164,6 +166,78 @@ fn parse_node_block(reader: &mut LineReader) -> Result<NodeBlock> {
     }
 }
 
+/// Validate parsed nodes against metadata from the header
+fn validate_nodes_metadata(node_blocks: &[NodeBlock], mut metadata_iter: TokenIter) -> Result<()> {
+    // Parse metadata
+    let num_nodes_token = metadata_iter.peek_token()?;
+    let expected_num_nodes = metadata_iter.parse_usize("numNodes")?;
+
+    let min_node_tag_token = metadata_iter.peek_token()?;
+    let expected_min_node_tag = metadata_iter.parse_usize("minNodeTag")?;
+
+    let max_node_tag_token = metadata_iter.peek_token()?;
+    let expected_max_node_tag = metadata_iter.parse_usize("maxNodeTag")?;
+
+    metadata_iter.expect_no_more()?;
+
+    // Calculate actual stats
+    let mut actual_num_nodes = 0;
+    let mut actual_min_tag = usize::MAX;
+    let mut actual_max_tag = usize::MIN;
+
+    for block in node_blocks {
+        actual_num_nodes += block.num_nodes();
+        block.for_each_tag(|tag| {
+            actual_min_tag = actual_min_tag.min(tag);
+            actual_max_tag = actual_max_tag.max(tag);
+        });
+    }
+
+    if actual_num_nodes != expected_num_nodes {
+        return Err(ParseError::InvalidData {
+            message: format!(
+                "Node count mismatch: header declares {}, but {} were parsed",
+                expected_num_nodes, actual_num_nodes
+            ),
+            span: num_nodes_token.span.to_source_span(),
+            msh_content: num_nodes_token.source.clone(),
+        });
+    }
+
+    // Handle case with no nodes
+    if actual_num_nodes == 0 {
+        return Err(ParseError::InvalidData {
+            message: "The $Nodes section contains 0 nodes. A valid mesh must have at least one node.".to_string(),
+            span: num_nodes_token.span.to_source_span(),
+            msh_content: num_nodes_token.source.clone(),
+        });
+    }
+
+    if actual_min_tag != expected_min_node_tag {
+        return Err(ParseError::InvalidData {
+            message: format!(
+                "Minimum node tag mismatch: header declares {}, but actual minimum is {}",
+                expected_min_node_tag, actual_min_tag
+            ),
+            span: min_node_tag_token.span.to_source_span(),
+            msh_content: min_node_tag_token.source.clone(),
+        });
+    }
+
+    if actual_max_tag != expected_max_node_tag {
+        return Err(ParseError::InvalidData {
+            message: format!(
+                "Maximum node tag mismatch: header declares {}, but actual maximum is {}",
+                expected_max_node_tag, actual_max_tag
+            ),
+            span: max_node_tag_token.span.to_source_span(),
+            msh_content: max_node_tag_token.source.clone(),
+        });
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::*;
@@ -201,5 +275,47 @@ $EndNodes
             }
             _ => panic!("Expected Surface node block"),
         }
+    }
+
+    #[test]
+    fn test_parse_nodes_mismatch_count() {
+        let data = r#"1 5 1 3
+2 1 0 3
+1
+2
+3
+0.0 0.0 0.0
+1.0 0.0 0.0
+1.0 1.0 0.0
+$EndNodes
+"#;
+
+        let source_file = SourceFile::new(data.into());
+        let mut reader = LineReader::new(source_file);
+        let mut mesh = Mesh::dummy();
+
+        let result = parse(&mut reader, &mut mesh);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_nodes_mismatch_min_tag() {
+        let data = r#"1 3 10 3
+2 1 0 3
+1
+2
+3
+0.0 0.0 0.0
+1.0 0.0 0.0
+1.0 1.0 0.0
+$EndNodes
+"#;
+
+        let source_file = SourceFile::new(data.into());
+        let mut reader = LineReader::new(source_file);
+        let mut mesh = Mesh::dummy();
+
+        let result = parse(&mut reader, &mut mesh);
+        assert!(result.is_err());
     }
 }

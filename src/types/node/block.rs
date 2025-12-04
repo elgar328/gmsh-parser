@@ -33,3 +33,34 @@ pub enum NodeBlock {
         nodes: Vec<Node3DParametric>,
     },
 }
+
+impl NodeBlock {
+    /// Returns the number of nodes in this block
+    pub fn num_nodes(&self) -> usize {
+        match self {
+            Self::Point { nodes, .. } => nodes.len(),
+            Self::Curve { nodes, .. } => nodes.len(),
+            Self::CurveParametric { nodes, .. } => nodes.len(),
+            Self::Surface { nodes, .. } => nodes.len(),
+            Self::SurfaceParametric { nodes, .. } => nodes.len(),
+            Self::Volume { nodes, .. } => nodes.len(),
+            Self::VolumeParametric { nodes, .. } => nodes.len(),
+        }
+    }
+
+    /// Iterates over the tag of each node in this block
+    pub fn for_each_tag<F>(&self, mut f: F)
+    where
+        F: FnMut(usize),
+    {
+        match self {
+            Self::Point { nodes, .. } => nodes.iter().for_each(|n| f(n.tag)),
+            Self::Curve { nodes, .. } => nodes.iter().for_each(|n| f(n.tag)),
+            Self::CurveParametric { nodes, .. } => nodes.iter().for_each(|n| f(n.tag)),
+            Self::Surface { nodes, .. } => nodes.iter().for_each(|n| f(n.tag)),
+            Self::SurfaceParametric { nodes, .. } => nodes.iter().for_each(|n| f(n.tag)),
+            Self::Volume { nodes, .. } => nodes.iter().for_each(|n| f(n.tag)),
+            Self::VolumeParametric { nodes, .. } => nodes.iter().for_each(|n| f(n.tag)),
+        }
+    }
+}
