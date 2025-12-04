@@ -5,14 +5,13 @@ use crate::types::element::{Element, ElementBlock};
 use crate::types::{ElementType, Mesh};
 
 pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
-    let token_line = reader.read_token_line()?;
-    let mut iter = token_line.iter();
+    let header_line = reader.read_token_line()?;
+    let mut iter = header_line.iter();
 
     let num_entity_blocks = iter.parse_usize("numEntityBlocks")?;
-    let _num_elements = iter.parse_usize("numElements")?;
-    let _min_element_tag = iter.parse_usize("minElementTag")?;
-    let _max_element_tag = iter.parse_usize("maxElementTag")?;
-    iter.expect_no_more()?;
+
+    // Parse metadata and validate later (after parsing all blocks)
+    let metadata_iter = iter;
 
     // Parse each entity block
     for _ in 0..num_entity_blocks {
@@ -22,6 +21,9 @@ pub fn parse(reader: &mut LineReader, mesh: &mut Mesh) -> Result<()> {
 
     let token_line = reader.read_token_line()?;
     token_line.expect_end_marker("Elements")?;
+
+    // Validate parsed elements against metadata
+    validate_elements_metadata(&mesh.element_blocks, metadata_iter)?;
 
     Ok(())
 }
@@ -95,15 +97,89 @@ fn parse_element_nodes(
 
             // Validate that at least one node is present
             if nodes.is_empty() {
-                return Err(token_line.invalid_format(format!(
-                    "Element {} ({:?}) has no nodes",
-                    tag, element_type
-                )));
+                return Err(token_line
+                    .invalid_format(format!("Element {} ({:?}) has no nodes", tag, element_type)));
             }
         }
     }
 
     Ok(nodes)
+}
+
+/// Validate parsed elements against metadata from the header
+fn validate_elements_metadata(
+    element_blocks: &[ElementBlock],
+    mut metadata_iter: TokenIter,
+) -> Result<()> {
+    // Parse metadata
+    let num_elements_token = metadata_iter.peek_token()?;
+    let expected_num_elements = metadata_iter.parse_usize("numElements")?;
+
+    let min_element_tag_token = metadata_iter.peek_token()?;
+    let expected_min_element_tag = metadata_iter.parse_usize("minElementTag")?;
+
+    let max_element_tag_token = metadata_iter.peek_token()?;
+    let expected_max_element_tag = metadata_iter.parse_usize("maxElementTag")?;
+
+    metadata_iter.expect_no_more()?;
+
+    // Count total elements
+    let actual_num_elements: usize = element_blocks
+        .iter()
+        .map(|block| block.elements.len())
+        .sum();
+
+    if actual_num_elements != expected_num_elements {
+        return Err(ParseError::InvalidData {
+            message: format!(
+                "Element count mismatch: header declares {}, but {} were parsed",
+                expected_num_elements, actual_num_elements
+            ),
+            span: num_elements_token.span.to_source_span(),
+            msh_content: num_elements_token.source.clone(),
+        });
+    }
+
+    // Find min and max element tags
+    let mut actual_min_tag = usize::MAX;
+    let mut actual_max_tag = usize::MIN;
+
+    for block in element_blocks {
+        for element in &block.elements {
+            actual_min_tag = actual_min_tag.min(element.tag);
+            actual_max_tag = actual_max_tag.max(element.tag);
+        }
+    }
+
+    // Handle case with no elements
+    if actual_num_elements == 0 {
+        actual_min_tag = 0;
+        actual_max_tag = 0;
+    }
+
+    if actual_min_tag != expected_min_element_tag {
+        return Err(ParseError::InvalidData {
+            message: format!(
+                "Minimum element tag mismatch: header declares {}, but actual minimum is {}",
+                expected_min_element_tag, actual_min_tag
+            ),
+            span: min_element_tag_token.span.to_source_span(),
+            msh_content: min_element_tag_token.source.clone(),
+        });
+    }
+
+    if actual_max_tag != expected_max_element_tag {
+        return Err(ParseError::InvalidData {
+            message: format!(
+                "Maximum element tag mismatch: header declares {}, but actual maximum is {}",
+                expected_max_element_tag, actual_max_tag
+            ),
+            span: max_element_tag_token.span.to_source_span(),
+            msh_content: max_element_tag_token.source.clone(),
+        });
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
