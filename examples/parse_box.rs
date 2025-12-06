@@ -1,16 +1,16 @@
 use gmsh_parser::parse_msh_file;
-use gmsh_parser::types::{ElementBlock, NodeBlock};
+use gmsh_parser::types::ElementBlock;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Parse the mesh file
     let mesh = parse_msh_file("tests/data/valid/box.msh")?;
     println!(
-        "Successfully parsed MSH file (Version {})
-",
+        "Successfully parsed MSH file (Version {})",
         mesh.format.version
     );
 
     // 2. Print a high-level summary using the built-in method
+    println!("\n=== Mesh Summary ===\n");
     mesh.print_summary();
 
     println!("\n=== Data Access Examples ===\n");
@@ -58,36 +58,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nNode Access Example (Specific Node):");
     if let Some(block) = mesh.node_blocks.get(9) {
         // Get the 10th block (index 9)
-        match block {
-            NodeBlock::Point { nodes, .. } => {
-                if let Some(node) = nodes.get(2) { // Get the 3rd node (index 2)
-                    println!("  Accessed 3rd node in 10th Point block: Tag {}, Coord ({:.3}, {:.3}, {:.3})", node.tag, node.x, node.y, node.z);
-                } else {
-                    println!("  2nd Point block does not have a 3rd node.");
-                }
-            },
-            NodeBlock::Curve { nodes, .. } => {
-                if let Some(node) = nodes.get(2) {
-                    println!("  Accessed 3rd node in 10th Curve block: Tag {}, Coord ({:.3}, {:.3}, {:.3})", node.tag, node.x, node.y, node.z);
-                } else {
-                    println!("  2nd Curve block does not have a 3rd node.");
-                }
-            },
-            NodeBlock::Surface { nodes, .. } => {
-                if let Some(node) = nodes.get(2) {
-                    println!("  Accessed 3rd node in 10th Surface block: Tag {}, Coord ({:.3}, {:.3}, {:.3})", node.tag, node.x, node.y, node.z);
-                } else {
-                    println!("  2nd Surface block does not have a 3rd node.");
-                }
-            },
-            NodeBlock::Volume { nodes, .. } => {
-                if let Some(node) = nodes.get(2) {
-                    println!("  Accessed 3rd node in 10th Volume block: Tag {}, Coord ({:.3}, {:.3}, {:.3})", node.tag, node.x, node.y, node.z);
-                } else {
-                    println!("  2nd Volume block does not have a 3rd node.");
-                }
-            },
-            _ => println!("  2nd node block is of a parametric or other specialized type. Skipping detailed print."),
+        println!(
+            "  Block Info: Dim {}, Tag {}, Parametric {}",
+            block.entity_dim(),
+            block.entity_tag(),
+            block.parametric
+        );
+
+        if let Some(node) = block.nodes.get(2) {
+            // Get the 3rd node (index 2)
+            print!(
+                "  Accessed 3rd node: Tag {}, Coord ({:.3}, {:.3}, {:.3})",
+                node.tag, node.x, node.y, node.z
+            );
+            if let Some(p_coords) = &node.parametric_coords {
+                print!(", Parametric {:?}", p_coords);
+            }
+            println!();
+        } else {
+            println!("  This block does not have a 3rd node.");
         }
     } else {
         println!("  Mesh does not contain a 10th node block.");

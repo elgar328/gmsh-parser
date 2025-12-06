@@ -48,8 +48,6 @@ impl Mesh {
 
     /// Print a summary of the mesh contents
     pub fn print_summary(&self) {
-        println!("=== Mesh Summary ===\n");
-
         // Format information
         println!("Format:");
         println!("  Version: {}", self.format.version);
@@ -77,19 +75,7 @@ impl Mesh {
         }
 
         // Nodes
-        let total_nodes: usize = self
-            .node_blocks
-            .iter()
-            .map(|block| match block {
-                NodeBlock::Point { nodes, .. } => nodes.len(),
-                NodeBlock::Curve { nodes, .. } => nodes.len(),
-                NodeBlock::CurveParametric { nodes, .. } => nodes.len(),
-                NodeBlock::Surface { nodes, .. } => nodes.len(),
-                NodeBlock::SurfaceParametric { nodes, .. } => nodes.len(),
-                NodeBlock::Volume { nodes, .. } => nodes.len(),
-                NodeBlock::VolumeParametric { nodes, .. } => nodes.len(),
-            })
-            .sum();
+        let total_nodes: usize = self.node_blocks.iter().map(|block| block.nodes.len()).sum();
         println!("\nNodes:");
         println!("  Node blocks: {}", self.node_blocks.len());
         println!("  Total nodes: {}", total_nodes);
@@ -153,9 +139,7 @@ impl Mesh {
     }
 
     /// Validate and collect entity tags (dim, tag)
-    fn validate_and_collect_entity_tags(
-        &self,
-    ) -> crate::error::Result<HashSet<(i32, i32)>> {
+    fn validate_and_collect_entity_tags(&self) -> crate::error::Result<HashSet<(i32, i32)>> {
         // Collect entity tags: (dim, tag)
         let mut entity_tags = HashSet::new();
 
@@ -233,11 +217,11 @@ impl Mesh {
                 )));
             }
 
-            block.for_each_tag(|tag| {
-                if duplicate_node_tag.is_none() && !node_tags.insert(tag) {
-                    duplicate_node_tag = Some(tag);
+            for node in &block.nodes {
+                if duplicate_node_tag.is_none() && !node_tags.insert(node.tag) {
+                    duplicate_node_tag = Some(node.tag);
                 }
-            });
+            }
 
             if let Some(tag) = duplicate_node_tag {
                 return Err(ParseError::MeshValidationError(format!(
@@ -264,8 +248,7 @@ impl Mesh {
             if has_entity_info && !entity_tags.contains(&(block.entity_dim, block.entity_tag)) {
                 return Err(ParseError::MeshValidationError(format!(
                     "Element block references missing entity: dim={}, tag={}",
-                    block.entity_dim,
-                    block.entity_tag
+                    block.entity_dim, block.entity_tag
                 )));
             }
 
@@ -316,25 +299,29 @@ impl Mesh {
 mod tests {
     use super::*;
     use crate::types::element::Element;
-    use crate::types::{ElementBlock, ElementType, Node0D, NodeBlock, PointEntity};
+    use crate::types::{ElementBlock, ElementType, EntityDimension, Node, NodeBlock, PointEntity};
 
     #[test]
     fn test_validate_duplicate_node_tag() {
         let mut mesh = Mesh::dummy();
-        mesh.node_blocks.push(NodeBlock::Point {
+        mesh.node_blocks.push(NodeBlock {
+            entity_dim: EntityDimension::Point,
             entity_tag: 1,
+            parametric: false,
             nodes: vec![
-                Node0D {
+                Node {
                     tag: 1,
                     x: 0.0,
                     y: 0.0,
                     z: 0.0,
+                    parametric_coords: None,
                 },
-                Node0D {
+                Node {
                     tag: 1, // Duplicate tag
                     x: 1.0,
                     y: 0.0,
                     z: 0.0,
+                    parametric_coords: None,
                 },
             ],
         });
@@ -351,13 +338,16 @@ mod tests {
     fn test_validate_duplicate_element_tag() {
         let mut mesh = Mesh::dummy();
         // Add valid nodes
-        mesh.node_blocks.push(NodeBlock::Point {
+        mesh.node_blocks.push(NodeBlock {
+            entity_dim: EntityDimension::Point,
             entity_tag: 1,
-            nodes: vec![Node0D {
+            parametric: false,
+            nodes: vec![Node {
                 tag: 1,
                 x: 0.0,
                 y: 0.0,
                 z: 0.0,
+                parametric_coords: None,
             }],
         });
 
@@ -390,13 +380,16 @@ mod tests {
     fn test_validate_missing_node_reference() {
         let mut mesh = Mesh::dummy();
         // Add valid nodes
-        mesh.node_blocks.push(NodeBlock::Point {
+        mesh.node_blocks.push(NodeBlock {
+            entity_dim: EntityDimension::Point,
             entity_tag: 1,
-            nodes: vec![Node0D {
+            parametric: false,
+            nodes: vec![Node {
                 tag: 1,
                 x: 0.0,
                 y: 0.0,
                 z: 0.0,
+                parametric_coords: None,
             }],
         });
 
@@ -434,13 +427,16 @@ mod tests {
         mesh.entities = Some(entities);
 
         // Add node block referencing missing entity
-        mesh.node_blocks.push(NodeBlock::Point {
+        mesh.node_blocks.push(NodeBlock {
+            entity_dim: EntityDimension::Point,
             entity_tag: 2, // Missing entity 2
-            nodes: vec![Node0D {
+            parametric: false,
+            nodes: vec![Node {
                 tag: 1,
                 x: 0.0,
                 y: 0.0,
                 z: 0.0,
+                parametric_coords: None,
             }],
         });
 
@@ -467,13 +463,16 @@ mod tests {
         mesh.entities = Some(entities);
 
         // Add valid nodes
-        mesh.node_blocks.push(NodeBlock::Point {
+        mesh.node_blocks.push(NodeBlock {
+            entity_dim: EntityDimension::Point,
             entity_tag: 1,
-            nodes: vec![Node0D {
+            parametric: false,
+            nodes: vec![Node {
                 tag: 1,
                 x: 0.0,
                 y: 0.0,
                 z: 0.0,
+                parametric_coords: None,
             }],
         });
 

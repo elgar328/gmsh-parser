@@ -14,12 +14,7 @@ pub mod interpolation_scheme;
 pub use mesh::Mesh;
 pub use mesh_format::{MeshFormat, Version, FileType};
 pub use entity::{Entities, PointEntity, CurveEntity, SurfaceEntity, VolumeEntity, EntityDimension};
-pub use node::{
-    Node0D, Node1D, Node1DParametric,
-    Node2D, Node2DParametric,
-    Node3D, Node3DParametric,
-    NodeBlock,
-};
+pub use node::{Node, NodeBlock};
 pub use element::{ElementBlock, ElementType};
 pub use physical_name::PhysicalName;
 pub use periodic::PeriodicLink;
