@@ -1,0 +1,3 @@
+# Exclude reference and test data from language statistics
+reference/** linguist-vendored
+tests/data/** linguist-vendored
